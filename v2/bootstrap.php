@@ -205,16 +205,11 @@ $container->singleton(OrderController::class, static fn(Container $c): OrderCont
     $c->get(UsualOrderService::class),
     $c->get(WhatsappGateway::class),
     $c->get(DraftOrderService::class),
+    $c->get(RedisClient::class),
     $c->get(Logger::class),
     $c->get(Config::class),
 ));
 
-$container->singleton(ProductSearchController::class, static fn(Container $c): ProductSearchController => new ProductSearchController(
-    $c->get(ProductRepository::class),
-    $c->get(Schema::class),
-    $c->get(QueryCache::class),
-    $c->get(WebhookDispatcher::class),
-));
 
 $container->singleton(OrderRepository::class, static fn(Container $c): OrderRepository => new OrderRepository(
     $c->get(Repository::class),
@@ -250,13 +245,7 @@ $container->singleton(CategoryService::class, static fn(Container $c): CategoryS
     $c->get(Logger::class),
     $c->get(Config::class)
     ));
-$container->singleton(ProductsController::class, static fn(Container $c): ProductsController => new ProductsController(
-    $c->get(ProductsService::class)
-));
-$container->singleton(CategoryController::class, static fn(Container $c): CategoryController => new CategoryController(
-    $c->get(ProductsService::class),
-    $c->get(CategoryService::class)
-));
+
 $container->singleton(CampaignService::class, static fn(Container $c): CampaignService => new CampaignService(
     $c->get(Logger::class),
     $c->get(Config::class)
@@ -266,9 +255,6 @@ $container->singleton(TrackingService::class, static fn(Container $c): TrackingS
     $c->get(Config::class)
 ));
 
-$container->singleton(CampaignController::class, static fn(Container $c): CampaignController => new CampaignController(
-    $c->get(CampaignService::class)
-));
 $container->singleton(TrackingController::class, static fn(Container $c): TrackingController => new TrackingController(
     $c->get(TrackingService::class)
 ));

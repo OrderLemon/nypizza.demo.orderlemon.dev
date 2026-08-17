@@ -1,6 +1,6 @@
 <?php
 
-namespace Pmsrapi\V2\Http\Controllers;
+namespace Plugins\Catalog\Controllers;
 
 use Pmsrapi\V2\Services\ProductsService;
 use Pmsrapi\V2\Services\CategoryService;

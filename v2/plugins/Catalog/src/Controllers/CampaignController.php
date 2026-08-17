@@ -1,6 +1,6 @@
 <?php
 
-namespace Pmsrapi\V2\Http\Controllers;
+namespace Plugins\Catalog\Controllers;
 
 use Pmsrapi\V2\Services\CampaignService;
 use Pmsrapi\V2\Http\Response;

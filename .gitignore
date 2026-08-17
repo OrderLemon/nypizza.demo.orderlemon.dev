@@ -14,3 +14,8 @@ v1/webhooks/logs/*.json
 Icon
 mockups/*
 test-env/nypizza.demo.json
+mockups/
+menu.json
+marvin.v1.txt
+marvin.v2.txt
+marvin.v3.txt
