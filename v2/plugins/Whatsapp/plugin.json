@@ -1,0 +1,9 @@
+{
+    "name": "Whatsapp",
+    "slug": "whatsapp",
+    "description": "WhatsApp outbound webhook: forwards a processed payload to an account's configured client webhook (port of v1 send_payload_to_client).",
+    "version": "1.0.0",
+    "author": "Mathieu Van daele",
+    "enabled": true,
+    "dependencies": []
+}
