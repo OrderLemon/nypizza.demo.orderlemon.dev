@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Pmsrapi\V2\Http\Controllers;
+namespace Plugins\Orders\Controllers;
 
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
 use Pmsrapi\V2\Http\Response;

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Pmsrapi\V2\Http\Controllers;
+namespace Plugins\Orders\Controllers;
 
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Http\Request;

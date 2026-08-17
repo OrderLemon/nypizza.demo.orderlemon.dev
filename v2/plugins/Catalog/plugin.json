@@ -3,7 +3,7 @@
     "slug": "Catalog",
     "description": "Catalog plugin for reaching products, categories, campaigns",
     "version": "1.0.0",
-    "author": "Mathieu Van daele",
+    "author": "Ciuban Eduard",
     "enabled": true,
     "dependencies": []
 }
