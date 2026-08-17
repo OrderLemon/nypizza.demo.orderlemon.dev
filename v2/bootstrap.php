@@ -13,7 +13,8 @@ declare(strict_types=1);
  * dropping namespaced classes under v2/src/ and registering them here or
  * resolving them where needed.
  */
-
+use Pmsrapi\V2\Http\Controllers\ProductsController;
+use Pmsrapi\V2\Http\Controllers\CategoryController;
 use Pmsrapi\V2\Cache\QueryCache;
 use Pmsrapi\V2\Cache\RateLimiter;
 use Pmsrapi\V2\Cache\RedisClient;
@@ -25,6 +26,8 @@ use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Core\Container;
 use Pmsrapi\V2\Database\Connection;
 use Pmsrapi\V2\Database\Repository;
+use Pmsrapi\V2\Database\OrderRepository;
+use Pmsrapi\V2\Database\ProductRepository;
 use Pmsrapi\V2\Database\Schema;
 use Pmsrapi\V2\Debug\DebugRecorder;
 use Pmsrapi\V2\Debug\Redactor;
@@ -35,14 +38,29 @@ use Pmsrapi\V2\Http\Controllers\HiveController;
 use Pmsrapi\V2\Http\Controllers\StreamController;
 use Pmsrapi\V2\Http\Controllers\SystemController;
 use Pmsrapi\V2\Http\Controllers\WebhookController;
+use Pmsrapi\V2\Http\Controllers\OrderController;
+use Pmsrapi\V2\Http\Controllers\ProductSearchController;
 use Pmsrapi\V2\Http\Middleware\AuthMiddleware;
 use Pmsrapi\V2\Http\Middleware\RateLimitMiddleware;
 use Pmsrapi\V2\Plugin\PluginManager;
 use Pmsrapi\V2\Queue\RedisQueue;
 use Pmsrapi\V2\Queue\WebhookDispatcher;
 use Pmsrapi\V2\Security\TokenStore;
+use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Webhook\WebhookStore;
+use Pmsrapi\V2\Services\OrderQueryService;
+use Pmsrapi\V2\Services\ConfigService;
+use Pmsrapi\V2\Services\ProductsService;
+use Pmsrapi\V2\Services\CategoryService;
+use Pmsrapi\V2\Services\CampaignService;
+use Pmsrapi\V2\Services\TrackingService;
+use Pmsrapi\V2\Services\UsualOrderService;
+use Pmsrapi\V2\Services\MenuService;
+use Pmsrapi\V2\Services\DraftOrderService;
+use Pmsrapi\V2\Http\Controllers\CampaignController;
+use Pmsrapi\V2\Http\Controllers\TrackingController;
+use Plugins\Whatsapp\Gateway\WhatsappGateway;
 
 define('V2_BASE', __DIR__);
 
@@ -182,6 +200,89 @@ $container->singleton(HiveController::class, static fn(Container $c): HiveContro
     $c->get(HiveRegistry::class),
 ));
 
+$container->singleton(OrderController::class, static fn(Container $c): OrderController => new OrderController(
+    $c->get(OrderQueryService::class),
+    $c->get(UsualOrderService::class),
+    $c->get(WhatsappGateway::class),
+    $c->get(DraftOrderService::class),
+    $c->get(Logger::class),
+    $c->get(Config::class),
+));
+
+$container->singleton(ProductSearchController::class, static fn(Container $c): ProductSearchController => new ProductSearchController(
+    $c->get(ProductRepository::class),
+    $c->get(Schema::class),
+    $c->get(QueryCache::class),
+    $c->get(WebhookDispatcher::class),
+));
+
+$container->singleton(OrderRepository::class, static fn(Container $c): OrderRepository => new OrderRepository(
+    $c->get(Repository::class),
+    $c->get(Schema::class),
+    $c->get(Connection::class),
+));
+
+$container->singleton(ProductRepository::class, static fn(Container $c): ProductRepository => new ProductRepository(
+    $c->get(Repository::class),
+    $c->get(Schema::class),
+    $c->get(Connection::class),
+));
+
+$container->singleton(OrderQueryService::class, static fn(Container $c): OrderQueryService => new OrderQueryService(
+    $c->get(Logger::class),
+    $c->get(Config::class),
+    $c->get(TrackingService::class),
+));
+
+$container->singleton(ConfigService::class, static fn(Container $c): ConfigService => new ConfigService(
+    $c->get(Config::class),
+));
+
+$container->singleton(JsonService::class, static fn(Container $c): JsonService => new JsonService(
+    $c->get(Logger::class),
+    $c->get(Config::class)
+));
+$container->singleton(ProductsService::class, static fn(Container $c): ProductsService => new ProductsService(
+    $c->get(Logger::class),
+    $c->get(Config::class)
+));
+$container->singleton(CategoryService::class, static fn(Container $c): CategoryService => new CategoryService(
+    $c->get(Logger::class),
+    $c->get(Config::class)
+    ));
+$container->singleton(ProductsController::class, static fn(Container $c): ProductsController => new ProductsController(
+    $c->get(ProductsService::class)
+));
+$container->singleton(CategoryController::class, static fn(Container $c): CategoryController => new CategoryController(
+    $c->get(ProductsService::class),
+    $c->get(CategoryService::class)
+));
+$container->singleton(CampaignService::class, static fn(Container $c): CampaignService => new CampaignService(
+    $c->get(Logger::class),
+    $c->get(Config::class)
+));
+$container->singleton(TrackingService::class, static fn(Container $c): TrackingService => new TrackingService(
+    $c->get(Logger::class),
+    $c->get(Config::class)
+));
+
+$container->singleton(CampaignController::class, static fn(Container $c): CampaignController => new CampaignController(
+    $c->get(CampaignService::class)
+));
+$container->singleton(TrackingController::class, static fn(Container $c): TrackingController => new TrackingController(
+    $c->get(TrackingService::class)
+));
+$container->singleton(UsualOrderService::class, static fn(Container $c): UsualOrderService => new UsualOrderService(
+      $c->get(Logger::class),
+    $c->get(Config::class)
+));
+$container->singleton(MenuService::class, fn($c) => new MenuService(
+    $c->get(Config::class), $c->get(Logger::class),
+));
+
+$container->singleton(DraftOrderService::class, fn($c) => new DraftOrderService(
+    $c->get(MenuService::class), $c->get(Logger::class), $c->get(Config::class),
+));
 // --- Plugins: discover developer extensions under v2/plugins/ and register
 // their services. This is the ONLY hook needed here — the core stays frozen
 // from now on; a plugin never edits bootstrap.php. See v2/plugins/README.md.

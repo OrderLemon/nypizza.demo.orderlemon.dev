@@ -2,6 +2,8 @@
 # Forward every /v2/... request that is not a real file to the front controller.
 # nginx equivalent is documented in v2/README.md.
 
+CGIPassAuth On
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /v2/
