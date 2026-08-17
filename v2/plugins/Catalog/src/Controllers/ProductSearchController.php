@@ -1,5 +1,5 @@
 <?php
-namespace Pmsrapi\V2\Http\Controllers;
+namespace Plugins\Catalog\Controllers;
 
 use Pmsrapi\V2\Database\OrderRepository;
 use Pmsrapi\V2\Database\ProductRepository;

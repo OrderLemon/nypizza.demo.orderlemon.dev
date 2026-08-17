@@ -1,0 +1,9 @@
+{
+    "name": "Catalog",
+    "slug": "Catalog",
+    "description": "Catalog plugin for reaching products, categories, campaigns",
+    "version": "1.0.0",
+    "author": "Mathieu Van daele",
+    "enabled": true,
+    "dependencies": []
+}

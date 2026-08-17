@@ -1,0 +1,625 @@
+
+<!DOCTYPE html>
+<!-- saved from url=(0060)https://api.orderlemon.dev/v1/html/templates/vat_ticket.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAT TICKET</title>
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css?family=Merriweather:300,300italic,400,400italic,700,700italic,900,900italic%7CGeologica:100,200,300,regular,500,600,700,800,900"
+        media="all">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+
+    <style>
+    #ticket{
+    	min-height:2000px;
+    }
+        *,
+        ::after,
+        ::before {
+            box-sizing: border-box
+        }
+
+        #company_address,
+        #shop_address,
+        #vat_number {
+            margin: 0 4rem
+        }
+
+        #shop_address {
+            padding-bottom: 4rem;
+        }
+
+        .capitalize:first-letter,
+        .left {
+            text-transform: capitalize
+        }
+
+        #payment_type,
+        #show_this_code,
+        .highlight {
+            background-color: var(--ol-yellow-white)
+        }
+
+        #company_name,
+        #loc_vat_ticket,
+        *,
+        .d-green-color {
+            color: var(--ol-green-dark)
+        }
+
+        :root {
+            --ol-yellow-primary: #fbdd11;
+            --ol-yellow-secondary: #f2c900;
+            --ol-yellow-white: #faf7c4;
+            --ol-green-dark: #004f2d;
+            --ol-green-light: #4cb944;
+            --wa-green: #25d366
+        }
+
+        * {
+            margin: 0;
+            padding: 0
+        }
+
+        div {
+            font-size: 34px
+        }
+
+        body {
+            margin: 50px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased
+        }
+
+        canvas,
+        img,
+        picture,
+        svg,
+        video {
+            display: block;
+            height: auto;
+            max-width: 100%
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font: inherit
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        p {
+            overflow-wrap: break-word
+        }
+
+        #__next,
+        #root {
+            isolation: isolate
+        }
+
+        body {
+            font-family: Geologica, sans-serif;
+            color: #000
+        }
+
+        #ticket {
+            height: auto;
+            min-width: 800px;
+            width: 800px;
+            box-shadow: rgba(0, 0, 0, .25) 0 54px 55px, rgba(0, 0, 0, .12) 0 -12px 30px, rgba(0, 0, 0, .12) 0 4px 6px, rgba(0, 0, 0, .17) 0 12px 13px, rgba(0, 0, 0, .09) 0 -3px 5px
+        }
+
+        #title,
+        header {
+            background-color: var(--ol-yellow-primary)
+        }
+
+        #title {
+            text-align: center;
+            width: 100%
+        }
+
+        .ticket-body {
+            padding: 3rem;
+            position: relative
+        }
+
+        header>img {
+            height: 160px;
+            margin-top: 2rem
+        }
+
+        #shop_name {
+            margin: 150px 4rem 0;
+            text-align: center
+        }
+
+        footer {
+            margin: auto
+        }
+
+        .currency::before {
+            content: "€"
+        }
+
+        .d-flex {
+            display: flex
+        }
+
+        .dir-column {
+            flex-direction: column
+        }
+
+        .jc-center {
+            justify-content: center
+        }
+
+        .jc-space-between {
+            justify-content: space-between
+        }
+
+        .left {
+            justify-content: flex-start
+        }
+
+        .right {
+            justify-content: flex-end
+        }
+
+        .ai-center {
+            align-items: center
+        }
+
+        #ticket-content {
+            margin-top: 50px;
+            border-bottom: 3px solid var(--ol-green-dark)
+        }
+
+        .cart-item,
+        .mb-10 {
+            margin-bottom: 20px
+        }
+
+        .cart-item:not(:last-child) {
+            border-bottom: 2px solid #004f2d30
+        }
+
+        .subtitle {
+            font-size: 1.8rem
+        }
+
+        .re-width {
+            width: fit-content
+        }
+
+        .mb-5 {
+            margin-bottom: 10px
+        }
+
+        .mb-20 {
+            margin-bottom: 40px
+        }
+
+        #totals {
+            margin-top: 20px
+        }
+
+        #vat-totals>table th {
+            width: 25%;
+            text-align: end;
+            font-size: 28px
+        }
+
+        #vat-totals>table tr {
+            text-align: end
+        }
+
+        #vat-totals>table td {
+            text-overflow: ellipsis;
+            overflow: hidden;
+            text-wrap: nowrap
+        }
+
+        #vat-totals>table td:first-child,
+        #vat-totals>table th:first-child {
+            text-align: start
+        }
+
+        #vat_number {
+            padding-bottom: 4rem
+        }
+
+        .qr_container {
+            display: flex;
+            margin-top: 6rem;
+            flex-direction: column;
+            align-items: center
+        }
+
+        .qr_container img {
+            width: 50%;
+            margin: auto
+        }
+
+        #loc_vat_ticket {
+            text-align: center;
+            margin-bottom: 2rem
+        }
+
+        .all-caps {
+            text-transform: uppercase
+        }
+
+        #payment_type,
+        #show_this_code {
+            color: var(--ol-green-dark);
+            padding: .5rem 1rem;
+            border-radius: 25px
+        }
+
+        #show_this_code {
+            text-wrap: balance;
+        }
+
+        #show_this_code_container {
+            width: 600px;
+        }
+
+        .body-background {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: -1;
+            background-repeat: no-repeat;
+            background-image: url(orderlemon_logo_icon_whitebg.png);
+            background-position: center;
+            background-size: 600px;
+            opacity: .05
+        }
+
+        .disabled {
+            display: none !important
+        }
+
+        .product-discount>div,
+        .product-discount>div>div {
+            font-size: 24px;
+        }
+    </style>
+</head>
+
+<body class="d-flex jc-center ai-center">
+    <div class="d-flex dir-column" id="ticket">
+        <header class="d-flex jc-center">
+            <h4 id="shop_name"></h4>
+        </header>
+
+
+        <section class="d-green-color" id="title">
+            <p style="font-size: 28px;" id="shop_address"></p>
+        </section>
+
+        <div class="ticket-body">
+            <div id="ticket-body-container" style="position: relative;">
+                <div class="body-background"></div>
+
+                <h2 class="capitalize" id="loc_vat_ticket"></h2>
+
+                <section class="d-green-color" id="subtitle">
+                    <div style="display: flex; width: 100%;justify-content: space-between;">
+                        <h5 class="capitalize" id="title_text"></h5>
+                        <h5 id="ordered_time"></h5>
+                    </div>
+                    <h5 class="capitalize" id="order_subtitle"></h5>
+                </section>
+
+                <section id="ticket-content"></section>
+
+                <section class="d-flex jc-space-between mb-10" id="totals">
+                    <div class="left capitalize" id="total_text">
+                    </div>
+                    <div class="right " id="total_price">
+                    </div>
+                </section>
+
+                <footer class="d-flex jc-center  re-width mb-10">
+                    <h4 class="capitalize" id="payment_type"></h4>
+                </footer>
+
+                <section class="d-flex jc-space-between mb-10" id="vat-totals">
+                    <table style="width: 100%; table-layout: fixed;" id="vat_table">
+                        <tbody><tr>
+                            <th class="all-caps" id="loc_vat_percent"></th>
+                            <th class="all-caps" id="loc_vat_excl"></th>
+                            <th class="all-caps" id="loc_vat"></th>
+                            <th class="all-caps" id="loc_vat_incl"></th>
+                        </tr>
+                    </tbody></table>
+                </section>
+            </div>
+            <div class="qr_container">
+                <div id="show_this_code_container">
+                    <h5 class="capitalize" id="show_this_code" style="text-align: center;"></h5>
+                </div>
+                <img id="qr_code" src="" alt="">
+
+                <h4 id="company_name"></h4>
+                <p style="font-size: 28px;" id="company_address"></p>
+                <p style="font-size: 28px;" id="vat_number"></p>
+
+                <h3 class="capitalize" id="thank_you_line"></h3>
+                <p><i style="opacity: 0.5; font-size: 20px;">Powered by OrderLemon</i></p>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const shopId = urlParams.get('shop_id');
+    const orderId = urlParams.get('order_id');
+    let token = urlParams.get('token');
+
+    if (!token) {
+        console.warn("no token provided")
+    }
+
+    fetch("/v2/orders/ticket/" + orderId, {
+        method: 'Get',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, 'Module': 'orders' },
+    }).then(json => json.json()).then(response => {
+        console.log(response)
+
+        if (response.success) {
+
+            const currency = response.data.shop_info.default_currency
+            const formatter = new Intl.NumberFormat(navigator.language, { style: 'currency', currency: currency ? currency : "EUR", currencyDisplay: 'narrowSymbol' });
+
+            const data = response.data
+            const tr = data.locales
+            //translations
+            document.getElementById('total_text').innerText = tr.total
+            document.getElementById('show_this_code').innerText = tr.show_this_code
+            document.getElementById('thank_you_line').innerText = tr.thank_you
+
+            document.getElementById('loc_vat_percent').innerText = tr.vat + "%"
+            document.getElementById('loc_vat').innerText = tr.vat
+            document.getElementById('loc_vat_excl').innerText = tr.vat_excl
+            document.getElementById('loc_vat_incl').innerText = tr.vat_incl
+            document.getElementById('loc_vat_ticket').innerText = tr.vat_ticket
+            //company info
+            document.getElementById('company_name').innerText = data.company_info.name
+            document.getElementById('company_address').innerText = data.company_info.address_formatted
+            document.getElementById('vat_number').innerText = data.company_info.vat_number
+            console.log("---------------------");
+            console.log(data.company_info);
+            //shop info
+            document.getElementById('shop_name').innerText = data.shop_info.name
+            document.getElementById('shop_address').innerText = data.shop_info.address_formatted
+
+            //order info
+            document.getElementById('title_text').innerText = `${tr.order} #${orderId}`
+            document.getElementById('order_subtitle').innerText = `${data.business_name ?? ""} ${data.client_reference ?? ""}`
+            //order items
+            var date = new Date(data.order_info.ordered_time)
+            document.getElementById('ordered_time').innerText = date.toLocaleString("en-UK")
+
+            let totalPrice = 0
+            let vatTotals = {}
+
+
+            let products = []
+            let product_discounts = []
+            let product_toppings = []
+            let total_discounts = []
+            data.order_info.order_items.forEach((item, inx) => {
+                if (item.unit_price < 0) {
+                    if (item.discount_product_id) {
+                        product_discounts.push(item)
+                    } else {
+                        total_discounts.push(item)
+                    }
+                } else {
+
+                    products.push(item)
+
+                }
+            })
+            console.log(products, product_discounts)
+
+            products.forEach((item, idx) => {
+                const itemTotal = item.unit_price * item.quantity
+
+                html = `
+                        <div class="cart-item mb-10" data-item-id=${item.id} id="product_${item.product_id}">
+                            <div class="d-flex jc-space-between">
+                                <div class="left" style="max-width:550px;">
+                                    ${item.item_description.replaceAll("\\'", "'")}
+                                </div>
+                                <div class="right ">
+                                    ${formatter.format(itemTotal)}
+                                </div>
+                            </div>
+                            <div class="subtitle">
+                                ${item.quantity}x <span class="">${formatter.format(item.unit_price)}</span>
+                            </div>
+                        </div>
+                    `
+                totalPrice += itemTotal
+
+                let vat = itemTotal / ((item.vat_percentage / 100) + 1)
+                if (item.vat_percentage > 0) { }
+
+                if (vatTotals[item.vat_percentage]) {
+                    vatTotals[item.vat_percentage]["total"] += itemTotal
+                    vatTotals[item.vat_percentage]["total_excl"] += itemTotal - vat
+                    vatTotals[item.vat_percentage]["total_vat"] += vat
+                } else {
+                    vatTotals[item.vat_percentage] = {
+                        total: itemTotal,
+                        total_excl: itemTotal - vat,
+                        total_vat: vat,
+                    }
+                }
+
+                if (item.parent_id) {
+                    product_toppings.push(item)
+                } else {
+                    document.getElementById('ticket-content').innerHTML += html
+                }
+            })
+            console.log(product_toppings)
+
+
+            product_discounts.forEach((item, idx) => {
+                const itemTotal = item.unit_price * item.quantity
+                html = `
+                        <div class="mb-10 ms-10 product-discount" style="opacity:0.7; margin-left:15px">
+                            <div class="d-flex jc-space-between">
+                                <div class="left" style="max-width:550px;">
+                                    ${item.item_description}
+                                </div>
+                                <div class="right ">
+                                    ${formatter.format(itemTotal)}
+                                </div>
+                            </div>
+                            <div class="subtitle">
+                                ${item.quantity}x <span class="">${formatter.format(item.unit_price)}</span>
+                            </div>
+                        </div>
+                    `
+
+                totalPrice += itemTotal
+
+                if (item.discount_product_id) {
+                    document.getElementById('product_' + item.discount_product_id).innerHTML += html
+                } else {
+                    //TODO: put in correct spot
+                    document.getElementById('ticket-content').innerHTML += html
+                }
+
+                let vat = itemTotal / ((item.vat_percentage / 100) + 1)
+                if (item.vat_percentage > 0) { }
+                console.log(vat)
+                if (vatTotals[item.vat_percentage]) {
+                    vatTotals[item.vat_percentage]["total"] += itemTotal
+                    vatTotals[item.vat_percentage]["total_excl"] += itemTotal - vat
+                    vatTotals[item.vat_percentage]["total_vat"] += vat
+                } else {
+                    vatTotals[item.vat_percentage] = {
+                        total: itemTotal,
+                        total_excl: itemTotal - vat,
+                        total_vat: vat,
+                    }
+                }
+
+            })
+
+            total_discounts.forEach((item, idx) => {
+                total_price_no_total_discounts = totalPrice
+
+                let discount_amount = item.unit_price
+                const itemTotal = item.unit_price * item.quantity
+
+                html = `
+                        <div class="cart-item mb-10 ms-10">
+                            <div class="d-flex jc-space-between">
+                                <div class="left" style="max-width:550px;">
+                                    ${item.item_description}
+                                </div>
+                                <div class="right ">
+                                    ${formatter.format(itemTotal)}
+                                </div>
+                            </div>
+                            <div class="subtitle">
+                                ${item.quantity}x <span class="">${formatter.format(item.unit_price)}</span>
+                            </div>
+                        </div>
+                    `
+
+                totalPrice += itemTotal
+
+                document.getElementById('ticket-content').innerHTML += html
+
+                console.log(discount_amount)
+                for (vat in vatTotals) {
+                    console.log("---")
+                    let percentage_of_this_vat = vatTotals[vat]["total"] / total_price_no_total_discounts
+
+                    console.log(vat)
+
+                    console.log(percentage_of_this_vat)
+
+                    let itemTotal = percentage_of_this_vat * discount_amount
+                    console.log(itemTotal)
+                    let vat_val = itemTotal / ((vat / 100) + 1)
+                    vatTotals[vat]["total"] += itemTotal
+                    vatTotals[vat]["total_excl"] += itemTotal - vat_val
+                    vatTotals[vat]["total_vat"] += vat_val
+
+                }
+            })
+
+            document.getElementById('total_price').innerText = formatter.format(totalPrice)
+
+            //vat list
+            console.log(vatTotals)
+            for (vat in vatTotals) {
+                let html = `
+                        <tr>
+                            <td>${vat}%</td>
+                            <td class="">${formatter.format(vatTotals[vat]["total_vat"])}</td>
+                            <td class="">${formatter.format(vatTotals[vat]["total_excl"])}</td>
+                            <td class="">${formatter.format(vatTotals[vat]["total"])}</td>
+                        </tr>
+                    `
+
+                document.getElementById('vat_table').innerHTML += html
+            }
+
+            //payment status
+            document.getElementById('payment_type').innerText = tr.payment_type_label
+
+            product_toppings.forEach((item, idx) => {
+                const itemTotal = item.unit_price * item.quantity
+                html = `
+                        <div class="ms-10 product-discount" style="opacity:0.7; margin-left:15px; margin-bottom:5px;">
+                            <div class="d-flex jc-space-between">
+                                <div class="left" style="max-width:550px;">
+                                    ${item.item_description} - ${item.quantity}x <span class="">${item.unit_price == 0 ? "" : formatter.format(item.unit_price)}</span>
+                                </div>
+                                <div class="right ">
+                                    ${formatter.format(itemTotal)}
+                                </div>
+                            </div>
+                    
+                        </div>
+                    `
+                $(`[data-item-id='${item.parent_id}']`).append(html)
+            })
+
+            //qr code
+            if (data.order_info.qr_code_url) {
+                document.getElementById('qr_code').src = data.order_info.qr_code_url
+            } else {
+                document.getElementById('qr_code').classList.add("disabled")
+                document.getElementById('show_this_code').classList.add("disabled")
+            }
+
+            // Signal that all dynamic content has been injected and the
+            // ticket is fully rendered. If your screenshot process can wait
+            // for a selector/attribute before capturing, wait for this.
+            document.body.setAttribute('data-ready', 'true')
+        }
+    })
+</script>
+
+</body></html>

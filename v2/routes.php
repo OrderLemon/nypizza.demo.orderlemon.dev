@@ -23,12 +23,7 @@ use Pmsrapi\V2\Http\Controllers\HiveController;
 use Pmsrapi\V2\Http\Controllers\StreamController;
 use Pmsrapi\V2\Http\Controllers\SystemController;
 use Pmsrapi\V2\Http\Controllers\WebhookController;
-use Pmsrapi\V2\Http\Controllers\WhatsappController;
 use Pmsrapi\V2\Http\Controllers\OrderController;
-use Pmsrapi\V2\Http\Controllers\ProductSearchController;
-use Pmsrapi\V2\Http\Controllers\ProductsController;
-use Pmsrapi\V2\Http\Controllers\CategoryController;
-use Pmsrapi\V2\Http\Controllers\CampaignController;
 use Pmsrapi\V2\Http\Controllers\TrackingController;
 use Pmsrapi\V2\Http\HttpMethod;
 use Pmsrapi\V2\Http\Request;
@@ -72,33 +67,6 @@ $router->get('/orders/active/{phone}', static fn(Request $r, array $p): Response
 $router->get('/orders/{id}/tracking', static fn(Request $r, array $p): Response
     => $container->get(TrackingController::class)->show($r, $p["id"]));
 
-$router->get('/products', static fn(Request $r, array $p): Response
-    => $container->get(ProductsController::class)->index($r));
-
-$router->get('/products/{id}', static fn(Request $r, array $p): Response
-    => $container->get(ProductsController::class)->show($r, $p["id"]));
-
-$router->get('/categories/products', static fn(Request $r, array $p): Response
-    => $container->get(CategoryController::class)->indexWithProducts($r));
-
-$router->get('/categories/{id}', static fn(Request $r, array $p): Response
-    => $container->get(CategoryController::class)->show($r, $p["id"]));
-
-$router->get('/categories/{id}/products', static fn(Request $r, array $p): Response
-    => $container->get(CategoryController::class)->indexProductsForCategory($r, $p["id"]));
-
-$router->get('/categories', static fn(Request $r, array $p): Response
-    => $container->get(CategoryController::class)->index($r));
-
-// Static subpath BEFORE {id} so "active" is not swallowed by {id}.
-$router->get('/campaigns/active', static fn(Request $r, array $p): Response
-    => $container->get(CampaignController::class)->active($r));
-
-$router->get('/campaigns/{id}', static fn(Request $r, array $p): Response
-    => $container->get(CampaignController::class)->show($r, $p["id"]));
-
-$router->get('/campaigns', static fn(Request $r, array $p): Response
-    => $container->get(CampaignController::class)->index($r));
 
 // --- Config-driven CRUD resources ---
 foreach ($config->resources() as $name => $resourceConfig) {
