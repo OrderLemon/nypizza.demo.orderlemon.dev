@@ -50,6 +50,8 @@ use Pmsrapi\V2\Services\CategoryService;
 use Pmsrapi\V2\Services\CampaignService;
 use Pmsrapi\V2\Services\TrackingService;
 use Pmsrapi\V2\Services\UsualOrderService;
+use Pmsrapi\V2\Services\ClientService;
+use Pmsrapi\V2\Services\ConversationService;
 use Pmsrapi\V2\Services\MenuService;
 use Pmsrapi\V2\Services\DraftOrderService;
 
@@ -222,6 +224,14 @@ $container->singleton(CampaignService::class, static fn(Container $c): CampaignS
 $container->singleton(TrackingService::class, static fn(Container $c): TrackingService => new TrackingService(
     $c->get(Logger::class),
     $c->get(Config::class)
+));
+$container->singleton(ClientService::class, static fn(Container $c): ClientService => new ClientService(
+    $c->get(Repository::class),
+    $c->get(Config::class),
+));
+$container->singleton(ConversationService::class, static fn(Container $c): ConversationService => new ConversationService(
+    $c->get(Repository::class),
+    $c->get(Config::class),
 ));
 
 $container->singleton(UsualOrderService::class, static fn(Container $c): UsualOrderService => new UsualOrderService(
