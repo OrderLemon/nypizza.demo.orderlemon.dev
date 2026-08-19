@@ -10,6 +10,8 @@ use Pmsrapi\V2\Cache\RedisClient;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Http\Request;
 use Pmsrapi\V2\Http\Response;
+use Pmsrapi\V2\Http\ResourceDefinition;
+use Pmsrapi\V2\Http\Controllers\CrudController;
 use Pmsrapi\V2\Plugin\AbstractPlugin;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
 use Pmsrapi\V2\Plugin\PluginRouter;
@@ -43,16 +45,17 @@ final class OrdersPlugin extends AbstractPlugin
             $c->get(UsualOrderService::class),
             $c->get(WhatsappGateway::class),
             $c->get(DraftOrderService::class),
-            $c->get(RedisClient::class),
-            $c->get(Config::class),
             $c->get(Logger::class),
+            $c->get(Config::class),
         ));
     }
 
     public function routes(PluginRouter $router, Container $container): void
     {
-        $router->get('/', static fn(Request $r, array $p): Response
-            => $container->get(OrderController::class)->index($r));
+        $def = ResourceDefinition::fromConfig((string) "orders_active_98", []);
+
+        $router->get('/active', static fn(Request $r, array $p): Response
+            => $container->get(OrderController::class)->indexActive($r));
 
         $router->post('/', static fn(Request $r, array $p): Response
             => $container->get(OrderController::class)->store($r));

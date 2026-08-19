@@ -13,8 +13,6 @@ declare(strict_types=1);
  * dropping namespaced classes under v2/src/ and registering them here or
  * resolving them where needed.
  */
-use Pmsrapi\V2\Http\Controllers\ProductsController;
-use Pmsrapi\V2\Http\Controllers\CategoryController;
 use Pmsrapi\V2\Cache\QueryCache;
 use Pmsrapi\V2\Cache\RateLimiter;
 use Pmsrapi\V2\Cache\RedisClient;
@@ -26,8 +24,6 @@ use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Core\Container;
 use Pmsrapi\V2\Database\Connection;
 use Pmsrapi\V2\Database\Repository;
-use Pmsrapi\V2\Database\OrderRepository;
-use Pmsrapi\V2\Database\ProductRepository;
 use Pmsrapi\V2\Database\Schema;
 use Pmsrapi\V2\Debug\DebugRecorder;
 use Pmsrapi\V2\Debug\Redactor;
@@ -38,8 +34,6 @@ use Pmsrapi\V2\Http\Controllers\HiveController;
 use Pmsrapi\V2\Http\Controllers\StreamController;
 use Pmsrapi\V2\Http\Controllers\SystemController;
 use Pmsrapi\V2\Http\Controllers\WebhookController;
-use Pmsrapi\V2\Http\Controllers\OrderController;
-use Pmsrapi\V2\Http\Controllers\ProductSearchController;
 use Pmsrapi\V2\Http\Middleware\AuthMiddleware;
 use Pmsrapi\V2\Http\Middleware\RateLimitMiddleware;
 use Pmsrapi\V2\Plugin\PluginManager;
@@ -58,9 +52,6 @@ use Pmsrapi\V2\Services\TrackingService;
 use Pmsrapi\V2\Services\UsualOrderService;
 use Pmsrapi\V2\Services\MenuService;
 use Pmsrapi\V2\Services\DraftOrderService;
-use Pmsrapi\V2\Http\Controllers\CampaignController;
-use Pmsrapi\V2\Http\Controllers\TrackingController;
-use Plugins\Whatsapp\Gateway\WhatsappGateway;
 
 define('V2_BASE', __DIR__);
 
@@ -200,30 +191,8 @@ $container->singleton(HiveController::class, static fn(Container $c): HiveContro
     $c->get(HiveRegistry::class),
 ));
 
-$container->singleton(OrderController::class, static fn(Container $c): OrderController => new OrderController(
-    $c->get(OrderQueryService::class),
-    $c->get(UsualOrderService::class),
-    $c->get(WhatsappGateway::class),
-    $c->get(DraftOrderService::class),
-    $c->get(RedisClient::class),
-    $c->get(Logger::class),
-    $c->get(Config::class),
-));
-
-
-$container->singleton(OrderRepository::class, static fn(Container $c): OrderRepository => new OrderRepository(
-    $c->get(Repository::class),
-    $c->get(Schema::class),
-    $c->get(Connection::class),
-));
-
-$container->singleton(ProductRepository::class, static fn(Container $c): ProductRepository => new ProductRepository(
-    $c->get(Repository::class),
-    $c->get(Schema::class),
-    $c->get(Connection::class),
-));
-
 $container->singleton(OrderQueryService::class, static fn(Container $c): OrderQueryService => new OrderQueryService(
+    $c->get(Repository::class),
     $c->get(Logger::class),
     $c->get(Config::class),
     $c->get(TrackingService::class),
@@ -255,9 +224,6 @@ $container->singleton(TrackingService::class, static fn(Container $c): TrackingS
     $c->get(Config::class)
 ));
 
-$container->singleton(TrackingController::class, static fn(Container $c): TrackingController => new TrackingController(
-    $c->get(TrackingService::class)
-));
 $container->singleton(UsualOrderService::class, static fn(Container $c): UsualOrderService => new UsualOrderService(
       $c->get(Logger::class),
     $c->get(Config::class)

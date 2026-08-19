@@ -2,6 +2,8 @@
 
 namespace Pmsrapi\V2\Services;
 
+use Pmsrapi\V2\Database\Repository;
+use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\TrackingService;
@@ -9,146 +11,273 @@ use Pmsrapi\V2\Orders\OrderStatus;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Helpers\CustomerHelper;
+use Pmsrapi\V2\Helpers\ApiRequestHelper;
+use UnexpectedValueException;
 
-final class OrderQueryService extends JsonService
+final class OrderQueryService
 {
     function __construct(
+        private readonly Repository $repo,
         protected Logger $logger,
         protected Config $config,
         protected TrackingService $trackingService,
-    ){
-        parent::__construct($logger, $config);
-    }
+    ){ }
+
+
     // Inserts a new order and returns its generated id, or false on failure.
-    public function create(array $order): ?array
+    public function create(array $data): ?array
     {
+        $shopId = $this->config->secret("company.shop_id");
+        $companyId = $this->config->secret("company.company_id");
+        // $conversationId = $data["conversation_id"];
+
+        if(!is_numeric($shopId)){
+            throw new ApiException("Invalid configuration for shop id");
+        }
+
+        if(!is_numeric($companyId)){
+            throw new ApiException("Invalid configuration for company id");
+        }
+
+        // if(!is_numeric($conversationId)){
+        //     throw new ApiException("Invalid conversation id");
+        // }
+
+        $apiUrl = $this->config->secret("orderlemon_api.url", "");
+        $token = $this->config->secret("orderlemon_api.token", "");
+        
         try{
+            $orderData = $this->orderPayload($data);
+            $upsertOrderData = $this->repo->upsert($this->table("orders", $shopId), $orderData);
 
-            $orderDate = new \DateTime();
-            $order["ordered_time"] = $orderDate->format("Y-m-d h:i:s");
-            $order["status"] = OrderStatus::Ordered->value;
-
-            foreach($order["items"] as $index => $item){
-                if(!isset($item["id"])){
-                    $order["items"][$index]["id"] = $index + 1;
-                }
+            if($upsertOrderData === null || !isset($upsertOrderData["id"]) || !is_numeric($upsertOrderData["id"])){
+                throw new ApiException("Error inserting a new order");
             }
 
-            $ids = $this->addItems([$order], "orders");
+            //update the items with the new order id
+            $data["items"] = array_map(function($row) use ($upsertOrderData) {
+                $row['order_id'] = (int)$upsertOrderData["id"];
+                return $row;
+            }, $data["items"]);
+            
+            $upsertOrderData["items"] = [];
 
-            if(count($ids) < 1){
+            foreach($data["items"] as $item){
+                $upsertItemData = $this->repo->upsert($this->table("order_items", $shopId), $item);
+                $upsertOrderData["items"][] = $upsertItemData["record"];
+            }
+
+            return $upsertOrderData;
+        }
+        catch(ApiException $e){
+            $this->logger->error("Error in creating order: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function table(string $tablePrefix, int $shopId) : string
+    {
+        return $tablePrefix . "_active_" . $shopId;
+    } 
+
+    private function orderPayload(array $data) : array
+    {
+        $total = $this->orderTotal($data["items"]);
+        $orderedTime = new \DateTime();
+        $orderedTime = $orderedTime->format("Y-m-d H:i:s");
+        return [
+            "phonenumber" => $data["phonenumber"],
+            "total" => $total,
+            "logistic_type" => $data["logistic_type"] ?? 1,
+            "payment_type" => $data["payment_type"] ?? 1,
+            "full_name" => $data["full_name"] ?? null,
+            "note" => $data["note"] ?? null,
+            "country" => $data["country"] ?? null,
+            "state" => $data["state"] ?? null,
+            "city" => $data["city"] ?? null,
+            "zip" => $data["zip"] ?? null,
+            "street" => $data["street"] ?? null,
+            "pick_up_moment" => $data["pick_up_moment"] ?? null,
+            "delivery_moment" => $data["delivery_moment"] ?? null,
+            "ordered_time" => $orderedTime,
+            "status_id" => 2,
+            "payment_status_id" => 2,
+            "happy_hour" => 0
+        ];
+    }
+
+    private function orderTotal(array $items) : float
+    {
+        return array_reduce(
+            $items,
+            fn(float $carry, array $itm): float => $carry + ($itm["unit_price"] * $itm["quantity"]),
+            0.0
+        );
+    }
+
+    public function indexActive() : ?array
+    {
+        $shopId = $this->config->secret("company.shop_id");
+
+        try{
+            $orders = $this->repo->selectRows(
+                $this->table("orders", $shopId),
+            );
+
+
+            $orderItems = $this->repo->selectRows($this->table("order_items", $shopId));
+            
+            $itemsByOrderId = [];
+
+            foreach ($orderItems as $item) {
+                $itemsByOrderId[$item["order_id"]][] = $item;
+            }
+
+            foreach ($orders as &$order) {
+                $order["items"] = $itemsByOrderId[$order["id"]] ?? [];
+            }
+
+            return $orders;
+        }catch(\Exception $e){
+            throw new ApiException($e->getMessage());
+            return null;
+        }
+    }
+
+
+    // Validates that each order item has a numeric price, qty, and product_id.
+    public function validateItems(array $items): void
+    {
+        $itemRules = [
+            "item_description"  => ["type" => "string",  "label" => "Description"],
+            "unit_price"        => ["type" => "numeric", "label" => "Price"],
+            "vat_percentage"    => ["type" => "numeric", "label" => "Vat percentage"],
+            "quantity"          => ["type" => "numeric", "label" => "Quantity"],
+            "product_id"        => ["type" => "numeric", "label" => "Product Id"],
+        ];
+
+        foreach ($items as $index => $item) {
+            foreach ($itemRules as $field => $rule) {
+                $value = $item[$field] ?? null;
+                $valid = $rule["type"] === "string"
+                    ? isset($value) && is_string($value)
+                    : isset($value) && is_numeric($value);
+
+                if (!$valid) {
+                    throw new ValidationException([
+                        "order_item" => "{$rule['label']} is required and must be a {$rule['type']} value (item #{$index})"
+                    ]);
+                }
+            }
+        }
+    }
+
+    function isValidMySQLDateTime(string $value): bool
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value)) {
+            return false;
+        }
+
+        $dt = \DateTime::createFromFormat('Y-m-d H:i:s', $value);
+
+        return $dt !== false && $dt->format('Y-m-d H:i:s') === $value;
+    }
+
+    // Validates that an order has a phone number and at least one item.
+    public function validateOrder(array $order): void
+    {
+        if (!isset($order["phonenumber"])) {
+            throw new ValidationException(["Phone Number" => "Order must have phone number!"]);
+        }
+
+        $fieldRules = [
+            "logistic_type"    => ["type" => "numeric",  "label" => "Logistic type"],
+            "payment_type"     => ["type" => "numeric",  "label" => "Payment type"],
+            "pick_up_time"     => ["type" => "datetime", "label" => "Pickup time"],
+            "pick_up_moment"   => ["type" => "datetime", "label" => "Pickup moment"],
+            "delivery_moment"  => ["type" => "datetime", "label" => "Delivery moment"],
+            "full_name"        => ["type" => "string",   "label" => "Full name"],
+            "note"             => ["type" => "string",   "label" => "Note"],
+            "country"          => ["type" => "string",   "label" => "Country"],
+            "state"            => ["type" => "string",   "label" => "State"],
+            "city"             => ["type" => "string",   "label" => "City"],
+            "zip"              => ["type" => "string",   "label" => "Zip"],
+            "street"           => ["type" => "string",   "label" => "Street"],
+        ];
+
+        foreach ($fieldRules as $field => $rule) {
+            if (!isset($order[$field])) {
+                continue; // all these fields are optional
+            }
+            $value = $order[$field];
+            $valid = match ($rule["type"]) {
+                "numeric"  => is_numeric($value),
+                "string"   => is_string($value),
+                "datetime" => $this->isValidMySQLDateTime($value),
+            };
+
+            if (!$valid) {
+                $message = $rule["type"] === "datetime"
+                    ? "Invalid date format for {$rule['label']}!"
+                    : "{$rule['label']} must be a {$rule['type']} value!";
+
+                throw new ValidationException([$rule["label"] => $message]);
+            }
+        }
+
+        if (empty($order["items"])) {
+            throw new ValidationException(["Items" => "Order must have items"]);
+        }
+
+        $this->validateItems($order["items"]);
+    }
+
+    // Finds an order by id, or null if it doesn't exist.
+    public function getById(int $orderId, int $shopId) : ?array
+    {
+        $apiUrl = $this->config->secret("orderlemon_api.url", "");
+        $apiToken = $this->config->secret("orderlemn_api.token", "");
+
+        if( trim($apiUrl) === "" || trim($apiToken) === ""){
+            throw new UnexpectedValueException("Api url or token is missing!");
+        }
+
+        try{
+            $order = ApiRequestHelper::apiRequest(
+                $apiUrl,
+                $this->table("orders", $shopId),
+                "select_row",
+                [],
+                "id = " . $orderId,
+                $apiToken,                
+                );
+                
+            if( $order === null || $order === false){
                 return null;
             }
 
-            $order["id"] = $ids[0];
+            $orderItems = ApiRequestHelper::apiRequest(
+                    $apiUrl,
+                    $this->table("order_items", $shopId),
+                    "select_rows",
+                    [],
+                    "order_id = " . $orderId,
+                    $apiToken,                
+                );
+            $order["items"] = $orderItems;
 
-            $this->trackingService->seed($order);
             return $order;
-        }
+        } 
         catch(\Exception $e){
             $this->logger->error("Error in creating order: " . $e->getMessage());
             return null;
         }
     }
 
-    // Validates that each order item has a numeric price, qty, and product_id.
-    public function validateIems(array $items): void
-    {
-        foreach($items as $index => $item){
-            if(!isset($item["item_description"]) || !is_string($item["item_description"])){
-                throw new ValidationException(["order_item" => "Description is required and must be a string"]);
-            }
-
-            if(!isset($item["unit_price"]) || !is_numeric($item["unit_price"])){
-                throw new ValidationException(["order_item" => "Price is required and must be a numeric value"]);
-            }
-          
-            if(!isset($item["vat_percentage"]) || !is_numeric($item["vat_percentage"])){
-                throw new ValidationException(["order_item" => "Vat percentage is required and must be a numeric value"]);
-            }
-
-            if(!isset($item["quantity"]) || !is_numeric($item["quantity"])){
-                throw new ValidationException(["order_item" => "Quantity is required and must be a numeric value"]);
-            }
-
-            if(!isset($item["product_id"]) || !is_numeric($item["product_id"])){
-                throw new ValidationException(["order_item" => "Product Id is required and must be a numeric value"]);
-            }
-
-            if(isset($item["config"]) && is_array($item["config"]) && count($item["config"]) > 0){
-
-                foreach($item["config"] as $configIndex => $configItem){
-                    if(!isset($configItem["item_description"]) || !is_string($configItem["item_description"])){
-                        throw new ValidationException(["order_item" => "Config description is required and must be a string"]);
-                    }
-          
-                    if(!isset($configItem["vat_percentage"]) || !is_numeric($configItem["vat_percentage"])){
-                        throw new ValidationException(["order_item" => "Vat percentage is required and must be a numeric value"]);
-                    }
-
-                    if(!isset($configItem["unit_price"]) || !is_numeric($configItem["unit_price"])){
-                        throw new ValidationException(["order_item" => "Config price is required and must be a numeric value"]);
-                    }
-
-                    if(!isset($configItem["quantity"]) || !is_numeric($configItem["quantity"])){
-                        throw new ValidationException(["order_item" => "Config quantity is required and must be a numeric value"]);
-                    }
-
-                    if(!isset($configItem["group_id"])){
-                        throw new ValidationException(["order_item" => "Config group Id is required!"]);
-                    }
-
-                    if(!isset($configItem["option_id"])){
-                        throw new ValidationException(["order_item" => "Config option Id is required!"]);
-                    }
-                }
-            }
-        }
-    }
-
-    // Validates that an order has a phone number and at least one item.
-    public function validateOrder(array $order): void
-    {
-        if( !isset($order["client_phone"])){
-            throw new ValidationException([(string) "Phone Number" => 'Order must have phone number!']);
-        }
-
-        if( !isset($order["payment_method"]) || !is_string($order["payment_method"]) || trim($order["payment_method"]) === ""){
-            throw new ValidationException([(string) "Payment Method" => 'Order must have a valid payment method!']);
-        }
-
-        if( !isset($order["payment_method_label"]) || !is_string($order["payment_method_label"]) || trim($order["payment_method_label"]) === ""){
-            throw new ValidationException([(string) "Payment Method" => 'Order must have a valid payment method!']);
-        }
-
-        if(!isset($order["items"]) || count($order["items"]) === 0){
-            throw new ValidationException([(string) "Items" => 'Order must have items']);
-        }
-
-        $this->validateIems($order["items"]);
-    }
-
-    // Finds an order by id, or null if it doesn't exist.
-    public function getById(int $id) : ?array
-    {
-        $orders = $this->load("orders");
-
-        $order = null;
-
-        foreach ($orders as $o) {
-            if ($o["id"] == $id) {
-                $order = $o;
-                break;
-            }
-        }
-
-        return $order;
-    }
-
     // Loads an order by id and builds its receipt data, or null if not found.
-    public function prepareForTicket(int $id) : ?array
+    public function prepareForTicket(int $orderId, int $shopId) : ?array
     {
-        $order = $this->getByid($id);
+        $order = $this->getByid($orderId, $shopId);
 
         if($order === null){
             return null;
@@ -204,6 +333,7 @@ final class OrderQueryService extends JsonService
 
         return $receiptData;
     }
+
     private function ticketOrderitems(array $items) : array
     {
         $result = [];
@@ -232,14 +362,15 @@ final class OrderQueryService extends JsonService
         return $result;
     }
 
-
     // Builds the signed URL to the receipt HTML template for a given order.
     private function generateTemplateUrl(int $id) : ?string
     {
         $token = $this->config->secret("ms_server_token");
+
         $templatePath = $this->config->secret("receipt.template");
 
         $host = $_SERVER['HTTP_HOST'];
+
         $protocol = isset($_SERVER['SERVER_PROTOCOL']) && strpos(trim($_SERVER["SERVER_PROTOCOL"]), "https") !== false
             ? 'https' : 'http';
 

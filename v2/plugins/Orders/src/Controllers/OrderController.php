@@ -24,15 +24,14 @@ final class OrderController
         private readonly UsualOrderService $usualOrderService,
         private readonly WhatsappGateway $whatsappGateway,
         private readonly DraftOrderService $drafts,
-        private readonly RedisClient $redis,
         private readonly Logger $logger,
         private readonly Config $config,
     ) {
     }
 
-    public function index(Request $request) : Response
+    public function indexActive(Request $request) : Response
     {
-        $orders = $this->queryService->load("orders");
+        $orders = $this->queryService->indexActive();
         return Response::ok(["orders" => $orders]);
     }
 
@@ -74,11 +73,7 @@ final class OrderController
             throw new ValidationException(["Invalid data" => "Provided phone is invalid!"]);
         }
 
-        $orders = $this->queryService->load("orders");
-
-        $orders = array_filter($orders, function($order) use ($phone){
-            return $order["client_phone"] === $phone && $order["status"] !== "delivered" && $order["status"] !== "cancelled";
-        });
+        $orders = $this->queryService->loadForPhone($phone);
 
         if(empty($orders)){
             return Response::ok(["status" => "success", "message" => "No active orders found.", "orders" => []]);
@@ -89,63 +84,43 @@ final class OrderController
 
     public function store(Request $request): Response
     {
-        $values = $request->body['values'] ?? null;
-        if (!is_array($values) || $values === []) {
-            throw new ValidationException(['values' => 'A non-empty "values" object is required']);
+        $data = $request->body['data'] ?? null;
+
+        if (!is_array($data) || $data === []) {
+            throw new ValidationException(['data' => 'A non-empty "data" object is required']);
         }
 
-        foreach ($values as $key => $value) {
+        foreach ($data as $key => $value) {
             if (!is_array($value) && $value !== null && !is_scalar($value)) {
                 throw new ValidationException([(string) $key => 'Value must be a scalar or null']);
             }
         }
 
-        $this->redis->connection()->rPush('whatsapp_jobs', json_encode([
-            'type' => 'send_confirmation',
-            'phone' => $values["client_phone"],
-        ]));
+        $this->queryService->validateOrder($data);
 
-
-        // $this->sendConfirmationMessage($values["client_phone"]);
-
-        $this->queryService->validateOrder($values);
-
-        $order = $this->queryService->create($values); 
+        $order = $this->queryService->create($data); 
 
         if($order === null){
-            $this->sendOrderLostMessage($values["client_phone"]);
+            // $this->sendOrderLostMessage($data["phonenumber"]);
             //send order lost message
             return Response::error(503, ["status" => "failed", 'message' => 'Failed to create order.']);
         }
 
-        $cleared = $this->drafts->clear($values["client_phone"]);
+        // $cleared = $this->drafts->clear($data["phonenumber"]);
 
-        $ticketUrl = $this->queryService->createTicket($order["id"]);
-
-        
-        if($ticketUrl === null){
-            $this->sendOrderLostMessage($values["client_phone"]);
-            //send order lost message
-            return Response::Ok(
-                [
-                    "status" => "failure",
-                    "message" => "Order was created but the ticked could not be generated!",
-                    "data" => ["order_id" => $order["id"]]
-                ]);
-        }
+        // $ticketUrl = $this->queryService->createTicket($order["id"]);
 
         
-        $this->redis->connection()->rPush('whatsapp_jobs', json_encode([
-            'type' => 'ticket_url',
-            'phone' => $values["client_phone"],
-            "ticket_url" => $ticketUrl,
-        ]));
-        
-        $this->redis->connection()->rPush('whatsapp_jobs', json_encode([
-            'type' => 'thank_you',
-            'phone' => $values["client_phone"],
-        ]));
-
+        // if($ticketUrl === null){
+        //     // $this->sendOrderLostMessage($data["phonenumber"]);
+        //     //send order lost message
+        //     return Response::Ok(
+        //         [
+        //             "status" => "failure",
+        //             "message" => "Order was created but the ticked could not be generated!",
+        //             "data" => ["order_id" => $order["id"]]
+        //         ]);
+        // }
 
         //currently using order time for pickup time
         // $this->sendTicketToClient($values["client_phone"], $order["ordered_time"], $ticketUrl);
@@ -157,7 +132,7 @@ final class OrderController
                 "status" => "success",
                 "data" => [
                     "order_id" => $order["id"],
-                    "ticket" => $ticketUrl,
+                    // "ticket" => $ticketUrl,
             ]]);
     }
 
@@ -243,13 +218,17 @@ final class OrderController
         }
     }
 
-    public function ticketData(Request $request, string $id) : Response
+    public function ticketData(Request $request, string $shopId, string $orderId,) : Response
     {
-        if(empty($id) || !is_numeric($id)){
-            throw new ValidationException(["Invalid data" => "Provided id is invalid!"]);
+        if(empty($orderId) || !is_numeric($orderId)){
+            throw new ValidationException(["Invalid data" => "Provided order id is invalid!"]);
         }
 
-        $ticketData = $this->queryService->prepareForTicket((int)$id);
+        if(empty($shopId) || !is_numeric($shopId)){
+            throw new ValidationException(["Invalid data" => "Provided shop id is invalid!"]);
+        }
+
+        $ticketData = $this->queryService->prepareForTicket((int)$orderId, (int)$shopId);
 
         if( $ticketData === null){
             return Response::error(503, ["error" => "error retrieveing data"]);
