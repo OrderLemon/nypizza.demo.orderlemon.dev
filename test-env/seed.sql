@@ -1,16 +1,76 @@
 -- DEV/TEST fixture data. ⚠ NEVER SHIP TO PRODUCTION.
 USE pmsrapi_test;
 
-CREATE TABLE IF NOT EXISTS clients (
-  id         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  name       VARCHAR(120)  NOT NULL,
-  email      VARCHAR(190)  NOT NULL UNIQUE,           -- NOT NULL, no default:
-  status     VARCHAR(20)   NOT NULL DEFAULT 'active',   -- inserting without it forces a 5xx
-  balance    DECIMAL(10,2) NOT NULL DEFAULT 0,          -- numeric column for SUM/AVG/MIN/MAX
-  created_at TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE `orders_active_98` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `phonenumber` varchar(14) NOT NULL,
+  `client_reference` varchar(20) DEFAULT NULL,
+  `full_name` varchar(200) DEFAULT NULL,
+  `business_name` varchar(200) DEFAULT NULL,
+  `business_vat` varchar(14) DEFAULT NULL,
+  `pick_up_time` datetime DEFAULT NULL,
+  `country` varchar(2) DEFAULT NULL,
+  `state` varchar(200) DEFAULT NULL,
+  `city` varchar(200) DEFAULT NULL,
+  `zip` varchar(12) DEFAULT NULL,
+  `street` varchar(200) DEFAULT NULL,
+  `box` varchar(6) DEFAULT NULL,
+  `note` mediumtext DEFAULT NULL,
+  `message_id` varchar(150) DEFAULT NULL,
+  `total` double(10,2) NOT NULL DEFAULT 0.00,
+  `status_id` tinyint(1) NOT NULL DEFAULT 1,
+  `status_label` varchar(70) DEFAULT 'ordering',
+  `ordered_time` datetime NOT NULL DEFAULT current_timestamp(),
+  `pick_up_moment` datetime DEFAULT NULL,
+  `delivery_moment` datetime DEFAULT NULL,
+  `happy_hour` tinyint(1) NOT NULL DEFAULT 0,
+  `payment_status_id` tinyint(1) NOT NULL DEFAULT 1,
+  `payment_type` tinyint(1) DEFAULT 1,
+  `payment_type_label` varchar(25) DEFAULT 'cash',
+  `payment_status_label` varchar(50) DEFAULT 'unpaid',
+  `payment_uid` varchar(255) DEFAULT NULL,
+  `shipping_company_id` int(11) DEFAULT NULL,
+  `shipping_company` varchar(50) DEFAULT NULL,
+  `shipping_driver_name` varchar(20) DEFAULT NULL,
+  `shipping_tracking` varchar(200) DEFAULT NULL,
+  `shipping_carrier_type` smallint(1) DEFAULT NULL,
+  `shipping_carrier_type_label` varchar(30) DEFAULT NULL,
+  `whatsapp_payload` longtext DEFAULT NULL,
+  `logistics_type` tinyint(1) DEFAULT NULL,
+  `logistics_label` varchar(8) DEFAULT NULL,
+  `fees_amount` double(10,2) DEFAULT 0.00,
+  `comission_amount` double(10,2) DEFAULT 0.00,
+  `billing_country` varchar(2) DEFAULT NULL,
+  `billing_state` varchar(200) DEFAULT NULL,
+  `billing_city` varchar(200) DEFAULT NULL,
+  `billing_zip` varchar(12) DEFAULT NULL,
+  `billing_street` varchar(200) DEFAULT NULL,
+  `billing_box` varchar(6) DEFAULT NULL,
+  `business_tin` varchar(14) DEFAULT NULL,
+  `printed` tinyint(1) DEFAULT NULL,
+  `printed_job` varchar(64) DEFAULT NULL,
+  `printed_timestamp` datetime DEFAULT NULL,
+  `pick_up_time_end` datetime DEFAULT NULL,
+  `display_currency_total` decimal(14,4) DEFAULT 0.0000,
+  `display_currency_iso3` varchar(3) DEFAULT 'EUR',
+  `display_currency_rate` decimal(18,8) DEFAULT 1.00000000,
+  `metadata` longtext DEFAULT NULL CHECK (json_valid(`metadata`)),
+  PRIMARY KEY (`id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-INSERT INTO clients (name, email, status, balance) VALUES
-  ('Ann Lee', 'ann@example.com',  'active',   120.50),
-  ('Bob Kim', 'bob@example.com',  'active',    80.00),
-  ('Cara Ng', 'cara@example.com', 'inactive',  45.25);
+CREATE TABLE `order_items_active_98` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `product_id` int(11) NOT NULL,
+  `campaign_id` int(11) DEFAULT NULL,
+  `product_reference` varchar(30) DEFAULT NULL,
+  `category_id` int(11) NOT NULL,
+  `item_description` varchar(200) NOT NULL,
+  `unit_price` double(10,2) NOT NULL,
+  `vat_percentage` int(2) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `order_id` int(11) NOT NULL,
+  `discount_product_id` int(11) DEFAULT NULL,
+  `parent_id` int(11) DEFAULT NULL,
+  `metadata` longtext DEFAULT NULL CHECK (json_valid(`metadata`)),
+  PRIMARY KEY (`id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

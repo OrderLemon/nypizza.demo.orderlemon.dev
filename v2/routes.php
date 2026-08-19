@@ -40,34 +40,6 @@ $router->get('/', static fn(Request $r, array $p): Response => $container->get(S
 $router->get('/info', static fn(Request $r, array $p): Response => $container->get(SystemController::class)->info($r));
 $router->get('/health', static fn(Request $r, array $p): Response => $container->get(SystemController::class)->health($r));
 
-$router->get('/orders', static fn(Request $r, array $p): Response
-    => $container->get(OrderController::class)->index($r));
-
-// $router->get('/orders/{id}', static fn(Request $r, array $p): Response
-//     => $container->get(OrderController::class)->show($r));
-
-$router->post('/orders', static fn(Request $r, array $p): Response
-    => $container->get(OrderController::class)->store($r));
-
-$router->get('/orders/ticket/{id}', static fn(Request $r, array $p): Response
-    => $container->get(OrderController::class)->ticketData($r, $p["id"]));
-
-$router->post('/orders/reorder', static fn(Request $r, array $p): Response
-    => $container->get(OrderController::class)->decodeOrder($r));
-
-$router->post('/orders/reference', static fn(Request $r, array $p): Response
-    => $container->get(OrderController::class)->referenceOrder($r));
-
-$router->get('/orders/usual/{phone}', static fn(Request $r, array $p): Response
-    => $container->get(OrderController::class)->usualFor($r, $p["phone"]));
-
-$router->get('/orders/active/{phone}', static fn(Request $r, array $p): Response
-    => $container->get(OrderController::class)->indexActiveForClient($r, $p["phone"]));
-
-$router->get('/orders/{id}/tracking', static fn(Request $r, array $p): Response
-    => $container->get(TrackingController::class)->show($r, $p["id"]));
-
-
 // --- Config-driven CRUD resources ---
 foreach ($config->resources() as $name => $resourceConfig) {
     $def = ResourceDefinition::fromConfig((string) $name, (array) $resourceConfig);

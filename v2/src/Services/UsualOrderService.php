@@ -97,7 +97,7 @@ final class UsualOrderService extends JsonService
             'times_ordered'   => $winner['count'],
             'considered'      => count($orders),
             'source_order_id' => (int) ($winner['order']['id'] ?? 0),
-            'hash'       => $signature,
+            'hash'            => $signature,
             'summary'         => $this->summarise($items),
             // WhatsApp reply button titles are capped at 20 characters, so the
             // basket contents go in the body text, never the button.
@@ -147,6 +147,7 @@ final class UsualOrderService extends JsonService
 
             $campaingId = (int)($item['campaign_id'] ?? null);
 
+            //the options part will be removed as the options will be products themselvs
             $options = [];
             foreach ((array) ($item['config'] ?? []) as $option) {
                 if (!is_array($option)) {
@@ -275,41 +276,49 @@ final class UsualOrderService extends JsonService
      */
     private function historyFor(string $phone): array
     {
+        $apiUrl = $this->config->secret("orderlemon_api.url");
+        $token = $this->config->secret("orderlemon_api.token");
+
         try {
-            $orders = $this->load(self::MOCKUP);
+            //get the orders from db
+            $orders = [];
+
+            if($orders === []){
+                return [];
+            }
+
+            //get their ids
+            $orderIds = array_column($orders,"id");
+
+            //get the order items
+            $orderItems = [];
+            //attach correct item to each order
+            $itemsByOrderId = [];
+
+            foreach ($orderItems as $item) {
+                $itemsByOrderId[$item["order_id"]][] = $item;
+            }
+
+            foreach ($orders as &$order) {
+                $order["items"] = $itemsByOrderId[$order["id"]] ?? [];
+            }
+            unset($order);
+
         } catch (ApiException $e) {
             $this->logger->error('usual: cannot load orders: ' . $e->getMessage());
 
             return [];
         }
-
-        $mine = [];
-
-        foreach ($orders as $order) {
-            if (!is_array($order)) {
-                continue;
-            }
-
-            if (!CustomerHelper::samePhone((string) ($order['client_phone'] ?? ''), $phone)) {
-                continue;
-            }
-
-            if (in_array((string) ($order['status'] ?? ''), self::IGNORED_STATUSES, true)) {
-                continue;
-            }
-
-            $mine[] = $order;
-        }
-
+  
         usort(
-            $mine,
+            $orders,
             static fn(array $a, array $b): int => strcmp(
                 (string) ($b['ordered_time'] ?? ''),
                 (string) ($a['ordered_time'] ?? '')
             )
         );
 
-        return array_slice(array_values($mine), 0, self::WINDOW);
+        return array_slice(array_values($orders), 0, self::WINDOW);
     }
 
 }
