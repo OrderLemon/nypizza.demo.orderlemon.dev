@@ -1,0 +1,9 @@
+{
+    "name": "Stores",
+    "slug": "stores",
+    "description": "Plugin to handle stores data.",
+    "version": "1.0.0",
+    "author": "PMSRAPI",
+    "enabled": true,
+    "dependencies": []
+}

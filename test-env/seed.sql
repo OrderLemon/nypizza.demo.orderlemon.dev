@@ -74,3 +74,34 @@ CREATE TABLE `order_items_active_98` (
   `metadata` longtext DEFAULT NULL CHECK (json_valid(`metadata`)),
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `clients_98` (
+  `phonenumber` varchar(14) NOT NULL,
+  `reference` varchar(20) DEFAULT NULL,
+  `full_name` varchar(200) DEFAULT NULL,
+  `business_name` varchar(200) DEFAULT NULL,
+  `business_vat` varchar(14) DEFAULT NULL,
+  `business_tin` varchar(14) DEFAULT NULL,
+  `billing_country` varchar(2) DEFAULT NULL,
+  `billing_state` varchar(200) DEFAULT NULL,
+  `billing_city` varchar(200) DEFAULT NULL,
+  `billing_zip` varchar(10) DEFAULT NULL,
+  `billing_street` varchar(200) DEFAULT NULL,
+  `billing_box` varchar(6) DEFAULT NULL,
+  `entry_pincode` varchar(15) DEFAULT NULL,
+  `country` varchar(2) DEFAULT NULL,
+  `state` varchar(200) DEFAULT NULL,
+  `city` varchar(200) DEFAULT NULL,
+  `zip` varchar(10) DEFAULT NULL,
+  `street` varchar(200) DEFAULT NULL,
+  `box` varchar(6) DEFAULT NULL,
+  `latitude` varchar(11) DEFAULT NULL,
+  `longitude` varchar(12) DEFAULT NULL,
+  `email` varchar(320) DEFAULT NULL,
+  `amount_of_orders` int(11) DEFAULT 0,
+  `last_order_time` datetime DEFAULT NULL,
+  `remarketing` tinyint(1) DEFAULT 1,
+  `happy_hour` tinyint(1) DEFAULT NULL,
+  `date_added` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`phonenumber`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
