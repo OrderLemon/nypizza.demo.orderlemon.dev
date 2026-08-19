@@ -19,6 +19,8 @@ use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\AnthropicClient;
 use Plugins\Whatsapp\AI\MarvinTools;
 use Pmsrapi\V2\Services\TrackingService;
+use Pmsrapi\V2\Services\ClientService;
+use Pmsrapi\V2\Services\ConversationService;
 use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\UsualOrderService;
@@ -76,6 +78,8 @@ final class WhatsappPlugin extends AbstractPlugin
             WhatsappController::class,
             static fn(Container $c): WhatsappController => new WhatsappController(
                 $c->get(WhatsappGateway::class),
+                $c->get(ClientService::class),
+                $c->get(ConversationService::class),
                 $c->get(Logger::class),
                 $c->get(Config::class),
                 $c->get(Marvin::class),

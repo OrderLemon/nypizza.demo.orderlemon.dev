@@ -10,6 +10,8 @@ use Plugins\Whatsapp\Gateway\WhatsappGateway;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Http\Request;
+use Pmsrapi\V2\Services\ClientService;
+use Pmsrapi\V2\Services\ConversationService;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Core\Config;
@@ -38,10 +40,13 @@ use Pmsrapi\V2\Core\Config;
 final class WhatsappController
 {
     private string $conversationJsonPath  = "";
-    private string $senderPhone  = "";
+    private string $clientPhone  = "";
+    private string $clientName  = "";
 
     public function __construct(
         private readonly WhatsappGateway $gateway,
+        private readonly ClientService $clientService,
+        private readonly ConversationService $conversrationService,
         private readonly Logger $logger,
         private readonly Config $config,
         private readonly Marvin $marvin,
@@ -63,8 +68,9 @@ final class WhatsappController
 
         $message = $this->extractMessage($body);
 
-        $this->senderPhone = trim((string) ($body['sender_phone'] ?? ''));
-        
+        $this->clientPhone = trim((string) ($body['sender_phone'] ?? ''));
+        $this->clientName = trim((string) ($body['sender_name'] ?? ''));
+
         $errors = [];
         if ($action !== 'incoming') {
             $errors['a'] = 'Only the "incoming" action is handled here';
@@ -72,7 +78,7 @@ final class WhatsappController
         if ($account === '') {
             $errors['phonenumber'] = 'The receiving account phonenumber is required';
         }
-        if ($this->senderPhone === '') {
+        if ($this->clientPhone === '') {
             $errors['sender_phone'] = 'The sender phonenumber is required';
         }
         if ($message === '') {
@@ -85,7 +91,7 @@ final class WhatsappController
 
         $this->logger->info('whatsapp: inbound message received', [
             'account' => $account,
-            'sender' => $this->senderPhone ,
+            'sender' => $this->clientPhone ,
             'message_type' => $messageType,
             'message' => $message,
             'message_id' => $body['message_id'] ?? null,
@@ -100,7 +106,7 @@ final class WhatsappController
         return Response::ok([
             'received' => true,
             'account' => $account,
-            'sender' => $this->senderPhone,
+            'sender' => $this->clientPhone,
             'message_type' => $messageType,
             'reply' => $reply,
         ]);
@@ -429,7 +435,7 @@ final class WhatsappController
     private function shopLink() : string
     {
         $shopLink = $this->config->secret("cta.shop_link");
-        return rtrim($shopLink, "/") . "/?phone=" . urlencode($this->senderPhone);
+        return rtrim($shopLink, "/") . "/?phone=" . urlencode($this->clientPhone);
     }
 
     /**
@@ -438,30 +444,22 @@ final class WhatsappController
      */
     private function reply($senderMessage, string $messageType, ?int $conversationId): array
     {
-        
-        $isNewClient = $this->isNewClient();
+        $isNewClient = $this->clientService->isNewClient($this->safePhone());
 
         $this->registerMessage($senderMessage, $messageType);
         
-        if( $isNewClient){
+        $this->conversrationService->upsertConversation($this->clientPhone);
+
+        if($isNewClient){
+            $this->clientService->upsertClient($this->clientPhone, $this->clientName);
+            return ["sent" => true];
+            return $this->welcomeCTA($this->clientPhone, $messageType, $conversationId);
+        }
             
-            return $this->welcomeCTA($this->senderPhone, $messageType, $conversationId);
-        }
-
-        return $this->marvinReply($this->senderPhone, $messageType, $conversationId);
+        return ["sent" => true];
+        return $this->marvinReply($this->clientPhone, $messageType, $conversationId);
     }
 
-    private function isNewClient() : bool
-    {
-        $conversations = $this->loadConversations();
-
-        if( $conversations === []){
-            $this->initClientConversation();
-            return true;
-        }
-
-        return false;
-    }
     
     private function loadConversations() : array
     {
@@ -509,7 +507,7 @@ final class WhatsappController
      */
     private function safePhone() : string
     {
-        $safe = preg_replace('/[^0-9]/', '', $this->senderPhone);
+        $safe = preg_replace('/[^0-9]/', '', $this->clientPhone);
 
         if($safe === null || $safe === ''){
             throw new ApiException("Sender phonenumber is not a usable identifier!");
@@ -525,7 +523,7 @@ final class WhatsappController
         // A file that exists but has no data.messages yet (or got truncated)
         // would make count() throw on PHP 8, taking the whole request with it.
         if(!isset($conversation["data"]["messages"]) || !is_array($conversation["data"]["messages"])){
-            $conversation = ["phone" => $this->senderPhone, "data" => ["total" => 0, "messages" => []]];
+            $conversation = ["phone" => $this->clientPhone, "data" => ["total" => 0, "messages" => []]];
         }
 
         $totalMessages = count($conversation["data"]["messages"]);
@@ -553,7 +551,7 @@ final class WhatsappController
 
     private function initClientConversation() : bool|int
     {
-        $data = ["phone" => $this->senderPhone, "data" => ["total" => 0, "messages" =>[]]];
+        $data = ["phone" => $this->clientPhone, "data" => ["total" => 0, "messages" =>[]]];
 
         return file_put_contents($this->conversationJsonPath, json_encode($data), LOCK_EX);
     }
