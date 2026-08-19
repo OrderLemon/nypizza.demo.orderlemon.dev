@@ -218,17 +218,13 @@ final class OrderController
         }
     }
 
-    public function ticketData(Request $request, string $shopId, string $orderId,) : Response
+    public function ticketData(Request $request, string $orderId) : Response
     {
         if(empty($orderId) || !is_numeric($orderId)){
             throw new ValidationException(["Invalid data" => "Provided order id is invalid!"]);
         }
 
-        if(empty($shopId) || !is_numeric($shopId)){
-            throw new ValidationException(["Invalid data" => "Provided shop id is invalid!"]);
-        }
-
-        $ticketData = $this->queryService->prepareForTicket((int)$orderId, (int)$shopId);
+        $ticketData = $this->queryService->prepareForTicket((int)$orderId);
 
         if( $ticketData === null){
             return Response::error(503, ["error" => "error retrieveing data"]);

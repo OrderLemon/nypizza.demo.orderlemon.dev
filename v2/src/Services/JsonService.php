@@ -12,7 +12,7 @@ class JsonService
 {
     protected string $jsonPath = "";
 
-    private const ALLOWED_MOCKUPS = ["products", "categories", "orders", "campaigns", "order_tracking", "order_drafts"];
+    private const ALLOWED_MOCKUPS = ["products", "categories", "orders", "campaigns", "order_tracking", "order_drafts", "stores"];
 
     function __construct(
         protected Logger $logger,
