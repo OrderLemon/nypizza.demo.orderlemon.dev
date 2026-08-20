@@ -12,6 +12,10 @@ use Pmsrapi\V2\Plugin\PluginRouter;
 use Pmsrapi\V2\Plugin\PluginRegistrar;
 use Pmsrapi\V2\Services\CartService;
 use Plugins\Cart\Controllers\CartController;
+use Pmsrapi\V2\Services\OrderQueryService;
+use Pmsrapi\V2\Core\Config;
+use Pmsrapi\V2\Support\Logger;
+use Plugins\Whatsapp\Gateway\WhatsappGateway;
 
 final class CartPlugin extends AbstractPlugin
 {
@@ -19,6 +23,10 @@ final class CartPlugin extends AbstractPlugin
     {
         $registrar->singleton(CartController::class, static fn(Container $c): CartController => new CartController(
             $c->get(CartService::class),
+            $c->get(WhatsappGateway::class),
+            $c->get(OrderQueryService::class),
+            $c->get(Config::class),
+            $c->get(Logger::class),
         ));
     }
 
@@ -32,5 +40,8 @@ final class CartPlugin extends AbstractPlugin
 
         $router->get('/{phone}', static fn(Request $r, $p): Response
             => $container->get(CartController::class)->getCart($r, $p["phone"]));
+
+        $router->get('/ticket/{id}', static fn(Request $r, array $p): Response
+            => $container->get(CartController::class)->ticketData($r, $p["id"]));
     }
 }

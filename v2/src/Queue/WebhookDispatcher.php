@@ -49,7 +49,6 @@ final class WebhookDispatcher
                 'payload' => $payload,
                 'emitted_at' => date('c'),
             ]);
-
         } catch (\RedisException $e) {
             // Non-fatal: the write already succeeded; only the notification is lost.
             $this->logger->error('Failed to enqueue webhook', ['event' => $event, 'error' => $e->getMessage()]);
@@ -73,8 +72,6 @@ final class WebhookDispatcher
                 'payload' => $job['payload'],
             ]);
 
-            var_dump($body);
-            die();
             $headers = ['Content-Type: application/json'];
             if ($sub['secret'] !== null && $sub['secret'] !== '') {
                 $signature = hash_hmac('sha256', $body, $sub['secret']);

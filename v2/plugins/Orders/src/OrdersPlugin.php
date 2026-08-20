@@ -60,9 +60,6 @@ final class OrdersPlugin extends AbstractPlugin
         $router->post('/', static fn(Request $r, array $p): Response
             => $container->get(OrderController::class)->store($r));
 
-        $router->get('/ticket/{id}', static fn(Request $r, array $p): Response
-            => $container->get(OrderController::class)->ticketData($r, $p["id"]));
-
         $router->post('/reorder', static fn(Request $r, array $p): Response
             => $container->get(OrderController::class)->decodeOrder($r));
 
