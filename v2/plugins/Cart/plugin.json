@@ -1,0 +1,9 @@
+{
+    "name": "Cart",
+    "slug": "cart",
+    "description": "Plugin to create/update new orders and handle checkouts.",
+    "version": "1.0.0",
+    "author": "PMSRAPI",
+    "enabled": true,
+    "dependencies": []
+}
