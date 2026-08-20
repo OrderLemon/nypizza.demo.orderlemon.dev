@@ -69,7 +69,7 @@ final class WhatsappController
         $message = $this->extractMessage($body);
 
         $this->clientPhone = trim((string) ($body['sender_phone'] ?? ''));
-        $this->clientName = trim((string) ($body['sender_name'] ?? ''));
+        $this->clientName = $this->extractClientName($body);
 
         $errors = [];
         if ($action !== 'incoming') {
@@ -448,16 +448,17 @@ final class WhatsappController
 
         $this->registerMessage($senderMessage, $messageType);
         
+        //create/update the conversation
         $this->conversrationService->upsertConversation($this->clientPhone);
 
         if($isNewClient){
             $this->clientService->upsertClient($this->clientPhone, $this->clientName);
             return ["sent" => true];
-            return $this->welcomeCTA($this->clientPhone, $messageType, $conversationId);
+            // return $this->welcomeCTA($this->clientPhone, $messageType, $conversationId);
         }
             
         return ["sent" => true];
-        return $this->marvinReply($this->clientPhone, $messageType, $conversationId);
+        // return $this->marvinReply($this->clientPhone, $messageType, $conversationId);
     }
 
     
@@ -576,6 +577,31 @@ final class WhatsappController
         $checkResults = $this->marvin->selfCheck();
 
         return Response::ok(["data" => $checkResults]);
+    }
+
+    private function extractClientName(array $body) : ?string
+    {
+        if(!isset($body["data"]["contact"])){
+            return null;
+        }
+
+        $contact = $body["data"]["contact"];
+
+        $fullName = "";
+
+        if(isset($contact["firstName"]) && trim($contact["firstName"]) !== ""){
+            $fullName = $contact["firstName"];
+        }
+
+        if(isset($contact["lastName"]) && trim($contact["lastName"]) !== ""){
+            $fullName .= " " . $contact["lastName"];
+        }
+
+        if(trim($fullName) === "" && isset($contact["displayName"]) && trim($contact["displayName"]) !== ""){
+            $fullName = $contact["displayName"];
+        }
+
+        return trim($fullName) !== "" ? $fullName : null;
     }
 
     private function extractMessage(array $body): string

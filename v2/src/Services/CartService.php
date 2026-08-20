@@ -42,7 +42,13 @@ final class CartService
     {
         $table = $this->ordersTable();
 
+        //TO-DO: this will be removed in the future when the shop is set with a phone number
+        //instead the client will be retrieved from the db
+        $client = $this->clients->upsertClient($phoneNumber, "");
+        // $client = $this->clients->getByPhone($phoneNumber);
+        
         $id = $this->repo->insertRow($table, [
+            'full_name'    => $client["full_name"], 
             'phonenumber'  => $phoneNumber,
             'status_id'    => self::CART_STATUS_ID,
             'status_label' => self::CART_STATUS_LABEL,
@@ -58,8 +64,8 @@ final class CartService
 
         $order['items'] = [];
 
-        //TO-DO: this will be removed in the future when the shop is set with a phone number
-        $this->clients->upsertClient($phoneNumber, "");
+ 
+
 
         return $order;
     }
@@ -364,7 +370,7 @@ final class CartService
             throw new NotFoundException('No active cart to checkout for this phone number');
         }
 
-        if ((int) ($checkoutData['logistic_type'] ?? null) !== self::DELIVERY_LOGISTIC_TYPE) {
+        if ((int) ($checkoutData['logistics_type'] ?? null) !== self::DELIVERY_LOGISTIC_TYPE) {
             $checkoutData = array_diff_key($checkoutData, array_flip(self::ADDRESS_FIELDS));
         }
 
@@ -372,14 +378,7 @@ final class CartService
 
         $orderId = (int) $order['id'];
 
-
-        // orders_active_{shop} calls this column logistics_type, not
-        // logistic_type — same client-facing name OrderQueryService uses.
         $orderFields = $checkoutData;
-        if (array_key_exists('logistic_type', $orderFields)) {
-            $orderFields['logistics_type'] = $orderFields['logistic_type'];
-            unset($orderFields['logistic_type']);
-        }
 
         // Explicit status fields are placed last so checkout data can never
         // smuggle its own status_id/status_label past the ones set here.
