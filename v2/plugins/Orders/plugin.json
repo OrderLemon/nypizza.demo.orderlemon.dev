@@ -1,7 +1,7 @@
 {
     "name": "Orders",
     "slug": "orders",
-    "description": "Orders plugin to create and read orders from the orderlemon dev database. Integrates data sources with the current OrderLemon App",
+    "description": "Orders plugin read orders from the orderlemon dev database.",
     "version": "1.0.0",
     "author": "Ciuban Eduard",
     "enabled": true,

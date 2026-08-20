@@ -8,6 +8,10 @@ use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Http\Request;
 use Pmsrapi\V2\Services\CartService;
+use Pmsrapi\V2\Services\OrderQueryService;
+use Pmsrapi\V2\Core\Config;
+use Pmsrapi\V2\Support\Logger;
+use Plugins\Whatsapp\Gateway\WhatsappGateway;
 
 /**
  * A plain controller. It returns a {@see Response} exactly like a core
@@ -17,7 +21,11 @@ use Pmsrapi\V2\Services\CartService;
 final class CartController
 {
     function __construct(
-        private readonly CartService $cartService
+        private readonly CartService $cartService,
+        private readonly WhatsappGateway $whatsappGateway,
+        private readonly OrderQueryService $queryService,
+        private readonly Config $config,
+        private readonly Logger $logger,
     ){}
 
     public function update(Request $request): Response
@@ -51,6 +59,32 @@ final class CartController
 
         $order = $this->cartService->checkoutOrder($body["checkout_data"], $body["phonenumber"]);
 
+        
+
+        $ticketUrl = $this->queryService->createTicket($order["id"]);
+
+        
+        if($ticketUrl === null){
+            // $this->sendOrderLostMessage($data["phonenumber"]);
+            //send order lost message
+            return Response::Ok(
+                [
+                    "status" => "failure",
+                    "message" => "Order was created but the ticked could not be generated!",
+                    "data" => ["order_id" => $order["id"]]
+                ]);
+        }
+
+        // currently using order time for pickup time
+        $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
+
+        $this->sendThankYouMessage($body["phonenumber"]);
+
+        return Response::Ok(
+            [
+                "status" => "success",
+                "data" => $order
+            ]);
         return Response::ok($order);
 
     }
@@ -73,6 +107,88 @@ final class CartController
 
         return Response::ok($fullOrder);
 
+    }
+
+    private function sendTicketToClient(string $phone, string $pickupDate,  string $ticketUrl) : bool
+    {
+        try
+        {
+            $shopAddress = $this->config->secret("company.shop.address");
+
+            $caption = "Powered by OrderLemon\nTo pick up $shopAddress .\n\n At $pickupDate";
+
+            $this->whatsappGateway->sendImage($phone, $ticketUrl, $caption);
+            
+            return true;
+        }catch(\Exception $ex){
+            $this->logger->error("whatsapp: order ticket", ["error" => $ex->getMessage()]);
+            return false;
+        }
+    }
+
+    public function ticketData(Request $request, string $orderId) : Response
+    {
+        if(empty($orderId) || !is_numeric($orderId)){
+            throw new ValidationException(["Invalid data" => "Provided order id is invalid!"]);
+        }
+
+        $ticketData = $this->queryService->prepareForTicket((int)$orderId);
+
+        if( $ticketData === null){
+            return Response::error(503, ["error" => "error retrieveing data"]);
+        }
+
+        return Response::ok($ticketData);
+    }
+
+    private function sendOrderLostMessage(string $phone, ?string $conversationId = null) : bool
+    {
+        try{
+            $this->whatsappGateway->sendText($phone, "Your order got lost. Please contact our team: https://wa.me/ruvenss");
+            return true;
+        }catch(\Exception $ex){
+            $this->logger->error("whatsapp: order lost", ["error" => $ex->getMessage()]);
+            return false;
+        }
+    }
+
+    private function sendConfirmationMessage(string $phone, ?string $conversationId = null) : bool
+    {
+        try{
+            $this->whatsappGateway->sendText($phone, "You'll receive confirmation in a moment.");
+            return true;
+        }catch(\Exception $ex){
+            $this->logger->error("whatsapp: order confirmation", ["error" => $ex->getMessage()]);
+            return false;
+        }
+    }
+
+    private function sendThankYouMessage(string $phone, ?string $conversationId = null) : bool
+    {
+        try
+        {
+            $this->whatsappGateway->sendButtons(
+                $phone,
+                "Thank you for ordering in Dominos Pizza Amsterdam!",
+                $this->trackOrderButton(),
+                $conversationId);
+            
+            return true;
+        }catch(\Exception $ex){
+            $this->logger->error("whatsapp: thank you message", ["error" => $ex->getMessage()]);
+            return false;
+        }
+    }
+
+    private function trackOrderButton() : array
+    {
+        return [
+            [
+                "id" => "campaigntype-1",
+                "type" => "reply",
+                "title" => "Track my order"
+            ],
+        ];
     }
 
 }

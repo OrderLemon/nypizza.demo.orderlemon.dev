@@ -13,60 +13,14 @@ use Pmsrapi\V2\Helpers\CustomerHelper;
 use Pmsrapi\V2\Orders\OrderStatus;
 use Pmsrapi\V2\Support\Logger;
 
-/**
- * Order read/write access against the shop's `orders_active_{shop}` /
- * `order_items_active_{shop}` tables, plus the receipt/ticket assembly used
- * to render and image a customer's ticket.
- */
 final class OrderQueryService
 {
-    private const int DEFAULT_STATUS_ID = 2;
-    private const int DEFAULT_PAYMENT_STATUS_ID = 2;
-
     public function __construct(
         private readonly Repository $repo,
         private readonly Logger $logger,
         private readonly Config $config,
         private readonly TrackingService $trackingService,
     ) {
-    }
-
-    // ------------------------------------------------------------- writing
-
-    /** Inserts a new order and its items, seeds delivery tracking, and returns the order row. */
-    public function create(array $data): ?array
-    {
-        $shopId = $this->shopId();
-
-        try {
-            $order = $this->repo->upsert($this->table('orders', $shopId), $this->orderPayload($data));
-
-            $orderId = $order['id'] ?? null;
-            if ($orderId === null || !is_numeric($orderId)) {
-                throw new ApiException('Error inserting a new order');
-            }
-
-            $items = [];
-
-            // Nested item config (modifiers) is not persisted as its own row yet;
-            // only the top-level item columns known to order_items are kept.
-            foreach ($data['items'] as $item) {
-                $item['order_id'] = (int) $orderId;
-                $inserted = $this->repo->upsert($this->table('order_items', $shopId), $item);
-                $items[] = $inserted['record'];
-            }
-
-            $record = $order['record'] ?? [];
-            $record['items'] = $items;
-
-            $this->trackingService->seed($record);
-
-            return $record;
-        } catch (ApiException $e) {
-            $this->logger->error('Error in creating order: ' . $e->getMessage());
-
-            return null;
-        }
     }
 
     // ------------------------------------------------------------- reading
@@ -134,99 +88,6 @@ final class OrderQueryService
             return null;
         }
     }
-
-    // ---------------------------------------------------------- validation
-
-    /** Validates that each order item has a numeric price, qty, category and product id. */
-    public function validateItems(array $items): void
-    {
-        $itemRules = [
-            'item_description' => ['type' => 'string',  'label' => 'Description'],
-            'unit_price'       => ['type' => 'numeric', 'label' => 'Price'],
-            'vat_percentage'   => ['type' => 'numeric', 'label' => 'Vat percentage'],
-            'quantity'         => ['type' => 'numeric', 'label' => 'Quantity'],
-            'product_id'       => ['type' => 'numeric', 'label' => 'Product Id'],
-            'category_id'      => ['type' => 'numeric', 'label' => 'Category Id'],
-        ];
-
-        foreach ($items as $index => $item) {
-            foreach ($itemRules as $field => $rule) {
-                $value = $item[$field] ?? null;
-                $valid = $rule['type'] === 'string'
-                    ? isset($value) && is_string($value)
-                    : isset($value) && is_numeric($value);
-
-                if (!$valid) {
-                    throw new ValidationException([
-                        'order_item' => "{$rule['label']} is required and must be a {$rule['type']} value (item #{$index})",
-                    ]);
-                }
-            }
-        }
-    }
-
-    /** Validates that an order has a phone number and at least one item. */
-    public function validateOrder(array $order): void
-    {
-        if (!isset($order['phonenumber'])) {
-            throw new ValidationException(['Phone Number' => 'Order must have phone number!']);
-        }
-
-        $fieldRules = [
-            'logistic_type'   => ['type' => 'numeric',  'label' => 'Logistic type'],
-            'payment_type'    => ['type' => 'numeric',  'label' => 'Payment type'],
-            'pick_up_time'    => ['type' => 'datetime', 'label' => 'Pickup time'],
-            'pick_up_moment'  => ['type' => 'datetime', 'label' => 'Pickup moment'],
-            'delivery_moment' => ['type' => 'datetime', 'label' => 'Delivery moment'],
-            'full_name'       => ['type' => 'string',   'label' => 'Full name'],
-            'note'            => ['type' => 'string',   'label' => 'Note'],
-            'country'         => ['type' => 'string',   'label' => 'Country'],
-            'state'           => ['type' => 'string',   'label' => 'State'],
-            'city'            => ['type' => 'string',   'label' => 'City'],
-            'zip'             => ['type' => 'string',   'label' => 'Zip'],
-            'street'          => ['type' => 'string',   'label' => 'Street'],
-        ];
-
-        foreach ($fieldRules as $field => $rule) {
-            if (!isset($order[$field])) {
-                continue; // all these fields are optional
-            }
-
-            $value = $order[$field];
-            $valid = match ($rule['type']) {
-                'numeric'  => is_numeric($value),
-                'string'   => is_string($value),
-                'datetime' => $this->isValidMySQLDateTime((string) $value),
-            };
-
-            if (!$valid) {
-                $message = $rule['type'] === 'datetime'
-                    ? "Invalid date format for {$rule['label']}!"
-                    : "{$rule['label']} must be a {$rule['type']} value!";
-
-                throw new ValidationException([$rule['label'] => $message]);
-            }
-        }
-
-        if (empty($order['items'])) {
-            throw new ValidationException(['Items' => 'Order must have items']);
-        }
-
-        $this->validateItems($order['items']);
-    }
-
-    private function isValidMySQLDateTime(string $value): bool
-    {
-        if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value)) {
-            return false;
-        }
-
-        $dt = \DateTime::createFromFormat('Y-m-d H:i:s', $value);
-
-        return $dt !== false && $dt->format('Y-m-d H:i:s') === $value;
-    }
-
-    // --------------------------------------------------------------- ticket
 
     /** Loads an order by id and builds its receipt data, or null if not found. */
     public function prepareForTicket(int $orderId): ?array
@@ -403,38 +264,6 @@ final class OrderQueryService
     private function table(string $tablePrefix, int $shopId): string
     {
         return $tablePrefix . '_active_' . $shopId;
-    }
-
-    private function orderPayload(array $data): array
-    {
-        return [
-            'phonenumber'      => $data['phonenumber'],
-            'total'            => $this->orderTotal($data['items']),
-            'logistics_type'   => $data['logistic_type'] ?? 1,
-            'payment_type'     => $data['payment_type'] ?? 1,
-            'full_name'        => $data['full_name'] ?? null,
-            'note'             => $data['note'] ?? null,
-            'country'          => $data['country'] ?? null,
-            'state'            => $data['state'] ?? null,
-            'city'             => $data['city'] ?? null,
-            'zip'              => $data['zip'] ?? null,
-            'street'           => $data['street'] ?? null,
-            'pick_up_moment'   => $data['pick_up_moment'] ?? null,
-            'delivery_moment'  => $data['delivery_moment'] ?? null,
-            'ordered_time'     => (new DateTimeImmutable())->format('Y-m-d H:i:s'),
-            'status_id'        => self::DEFAULT_STATUS_ID,
-            'payment_status_id' => self::DEFAULT_PAYMENT_STATUS_ID,
-            'happy_hour'       => 0,
-        ];
-    }
-
-    private function orderTotal(array $items): float
-    {
-        return array_reduce(
-            $items,
-            fn(float $carry, array $item): float => $carry + ((float) $item['unit_price'] * (float) $item['quantity']),
-            0.0,
-        );
     }
 
     /** Every order for the configured shop, items attached. */

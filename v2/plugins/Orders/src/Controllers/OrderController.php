@@ -12,7 +12,6 @@ use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\UsualOrderService;
 use Pmsrapi\V2\Services\DraftOrderService;
 use Pmsrapi\V2\Core\Config;
-use Pmsrapi\V2\Cache\RedisClient;
 use Pmsrapi\V2\Support\Logger;
 
 final class OrderController
@@ -82,60 +81,6 @@ final class OrderController
         return Response::ok(["status" => "success", "orders" => $orders]);
     }
 
-    public function store(Request $request): Response
-    {
-        $data = $request->body['data'] ?? null;
-
-        if (!is_array($data) || $data === []) {
-            throw new ValidationException(['data' => 'A non-empty "data" object is required']);
-        }
-
-        foreach ($data as $key => $value) {
-            if (!is_array($value) && $value !== null && !is_scalar($value)) {
-                throw new ValidationException([(string) $key => 'Value must be a scalar or null']);
-            }
-        }
-
-        $this->queryService->validateOrder($data);
-
-        $order = $this->queryService->create($data); 
-
-        if($order === null){
-            // $this->sendOrderLostMessage($data["phonenumber"]);
-            //send order lost message
-            return Response::error(503, ["status" => "failed", 'message' => 'Failed to create order.']);
-        }
-
-        // $cleared = $this->drafts->clear($data["phonenumber"]);
-
-        // $ticketUrl = $this->queryService->createTicket($order["id"]);
-
-        
-        // if($ticketUrl === null){
-        //     // $this->sendOrderLostMessage($data["phonenumber"]);
-        //     //send order lost message
-        //     return Response::Ok(
-        //         [
-        //             "status" => "failure",
-        //             "message" => "Order was created but the ticked could not be generated!",
-        //             "data" => ["order_id" => $order["id"]]
-        //         ]);
-        // }
-
-        //currently using order time for pickup time
-        // $this->sendTicketToClient($values["client_phone"], $order["ordered_time"], $ticketUrl);
-
-        // $this->sendThankYouMessage($values["client_phone"]);
-
-        return Response::Ok(
-            [
-                "status" => "success",
-                "data" => [
-                    "order_id" => $order["id"],
-                    // "ticket" => $ticketUrl,
-            ]]);
-    }
-
     public function show(Request $request, array $params): Response
     {
         $draft = $this->drafts->byReference(trim((string) $request->query('ref', '')));
@@ -149,88 +94,6 @@ final class OrderController
             'items'     => $draft['items'],
             'total'     => $draft['total'],
         ]);
-    }
-
-    private function sendOrderLostMessage(string $phone, ?string $conversationId = null) : bool
-    {
-        try{
-            $this->whatsappGateway->sendText($phone, "Your order got lost. Please contact our team: https://wa.me/ruvenss");
-            return true;
-        }catch(\Exception $ex){
-            $this->logger->error("whatsapp: order lost", ["error" => $ex->getMessage()]);
-            return false;
-        }
-    }
-
-    private function sendConfirmationMessage(string $phone, ?string $conversationId = null) : bool
-    {
-        try{
-            $this->whatsappGateway->sendText($phone, "You'll receive confirmation in a moment.");
-            return true;
-        }catch(\Exception $ex){
-            $this->logger->error("whatsapp: order confirmation", ["error" => $ex->getMessage()]);
-            return false;
-        }
-    }
-
-    private function sendThankYouMessage(string $phone, ?string $conversationId = null) : bool
-    {
-        try
-        {
-            $this->whatsappGateway->sendButtons(
-                $phone,
-                "Thank you for ordering in Dominos Pizza Amsterdam!",
-                $this->trackOrderButton(),
-                $conversationId);
-            
-            return true;
-        }catch(\Exception $ex){
-            $this->logger->error("whatsapp: thank you message", ["error" => $ex->getMessage()]);
-            return false;
-        }
-    }
-
-    private function trackOrderButton() : array
-    {
-        return [
-            [
-                "id" => "campaigntype-1",
-                "type" => "reply",
-                "title" => "Track my order"
-            ],
-        ];
-    }
-
-    private function sendTicketToClient(string $phone, string $pickupDate,  string $ticketUrl) : bool
-    {
-        try
-        {
-            $shopAddress = $this->config->secret("company.shop.address");
-
-            $caption = "Powered by OrderLemon\nTo pick up $shopAddress .\n\n At $pickupDate";
-
-            $this->whatsappGateway->sendImage($phone, $ticketUrl, $caption);
-            
-            return true;
-        }catch(\Exception $ex){
-            $this->logger->error("whatsapp: order ticket", ["error" => $ex->getMessage()]);
-            return false;
-        }
-    }
-
-    public function ticketData(Request $request, string $orderId) : Response
-    {
-        if(empty($orderId) || !is_numeric($orderId)){
-            throw new ValidationException(["Invalid data" => "Provided order id is invalid!"]);
-        }
-
-        $ticketData = $this->queryService->prepareForTicket((int)$orderId);
-
-        if( $ticketData === null){
-            return Response::error(503, ["error" => "error retrieveing data"]);
-        }
-
-        return Response::ok($ticketData);
     }
 
     public function decodeOrder(Request $request) : Response
