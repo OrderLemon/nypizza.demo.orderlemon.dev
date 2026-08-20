@@ -28,6 +28,8 @@ final class CartService
 
     private const array ADDRESS_FIELDS = ['country', 'state', 'city', 'zip', 'street', 'box'];
 
+    private const array LOGISTIC_LABELS = [1 => "pick_up", 2 => "delivery"];
+
     public function __construct(
         private readonly Repository $repo,
         private readonly Config $config,
@@ -299,7 +301,7 @@ final class CartService
             0.0,
         );
 
-        $this->repo->updateById($ordersTable, $orderId, ['total' => round($total, 2)]);
+        $this->repo->updateById($ordersTable, $orderId, ['total' => round($total, 2), "display_currency_total" => $total]);
 
         $order = $this->repo->selectRow($ordersTable, ['id' => $orderId]);
 
@@ -370,7 +372,6 @@ final class CartService
 
         $orderId = (int) $order['id'];
 
-        $order["display_curency_total"] = $order["total"];
 
         // orders_active_{shop} calls this column logistics_type, not
         // logistic_type — same client-facing name OrderQueryService uses.
@@ -386,6 +387,7 @@ final class CartService
             ...$orderFields,
             'status_id'    => self::CHECKED_OUT_STATUS_ID,
             'status_label' => "ordered",
+            'logistics_label' => self::LOGISTIC_LABELS[$orderFields["logistics_type"]]
         ]);
 
         return $this->withItemsAndTotal($orderId, [], false);
