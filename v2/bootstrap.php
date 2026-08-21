@@ -233,6 +233,7 @@ $container->singleton(ClientService::class, static fn(Container $c): ClientServi
 $container->singleton(ConversationService::class, static fn(Container $c): ConversationService => new ConversationService(
     $c->get(Repository::class),
     $c->get(Config::class),
+    $c->get(OrderQueryService::class),
 ));
 
 $container->singleton(CartService::class, static fn(Container $c): CartService => new CartService(
