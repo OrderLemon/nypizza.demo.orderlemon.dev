@@ -18,14 +18,14 @@ if [ ! -f "$SECRET_FILE" ]; then
 fi
 
 cp "$SECRET_FILE" /opt/nypizza.demo.json
-mkdir -p /home/nypizza.demo.data/mockups
-cp -r "${MOCKUPS%/}/." /home/nypizza.demo.data/mockups/
-mkdir -p /home/nypizza.demo.data/marvin
-cp "${MARVIN_1}" /home/nypizza.demo.data/marvin.v1.txt
-cp "${MARVIN_2}" /home/nypizza.demo.data/marvin.v2.txt
-cp "${MARVIN_3}" /home/nypizza.demo.data/marvin.v3.txt
-mkdir -p /home/nypizza.demo.data/menu
-cp "${MENU}" /home/nypizza.demo.data/menu.json
+mkdir -p /home/demo.data/98/mockups
+cp -r "${MOCKUPS%/}/." /home/demo.data/98/mockups/
+mkdir -p /home/demo.data/98/marvin
+cp "${MARVIN_1}" /home/demo.data/98/marvin.v1.txt
+cp "${MARVIN_2}" /home/demo.data/98/marvin.v2.txt
+cp "${MARVIN_3}" /home/demo.data/98/marvin.v3.txt
+mkdir -p /home/demo.data/98/menu
+cp "${MENU}" /home/demo.data/98/menu.json
 mkdir -p /home/errors/
 touch /home/errors/nypizza.demo.log
 

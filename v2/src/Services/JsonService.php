@@ -4,6 +4,7 @@ namespace Pmsrapi\V2\Services;
 
 use Pmsrapi\V2\Exception\ServiceException;
 use Pmsrapi\V2\Exception\ApiException;
+use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Helpers\JsonHelper;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Core\Config;
@@ -25,15 +26,7 @@ class JsonService
             throw new ApiException("Mockup {$mockup} not found!");
         }
 
-        $mockupsDir = $this->config->secret("local_resources.mockups.path");
-
-        if( !is_dir($mockupsDir)){
-            $this->logger->error("Invalid resources directory: {$mockupsDir}");
-            throw new ApiException("No resources found!");
-        }
-
-        $this->jsonPath = $mockupsDir . DIRECTORY_SEPARATOR . $mockup . ".json";
-
+        $this->jsonPath = $this->jsonPath($mockup);
 
         if(!file_exists($this->jsonPath)){
             $this->logger->error("Invalid file path: {$this->jsonPath}");
@@ -90,13 +83,24 @@ class JsonService
 
     public function jsonPath(string $mockup) : string
     {
+        if(!defined('shop_id')){
+            throw new ValidationException(["shop id" => "No shop id provided for mockups!"]);
+        }
+
+        if(!is_numeric(shop_id)){
+            throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
+        }
+
         if(!in_array($mockup, self::ALLOWED_MOCKUPS)){
             throw new ApiException("Mockup {$mockup} not found!");
         }
 
+
         $mockupsDir = $this->config->secret("local_resources.mockups.path");
 
-        if( !is_dir($mockupsDir)){
+        $mockupsDir = str_replace("{{shop_id}}", shop_id, $mockupsDir);
+
+        if(!is_string($mockupsDir) || !is_dir($mockupsDir)){
             $this->logger->error("Invalid resources directory: {$mockupsDir}");
             throw new ApiException("No resources found!");
         }

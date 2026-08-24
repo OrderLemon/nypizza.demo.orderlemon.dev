@@ -12,8 +12,8 @@ use Pmsrapi\V2\Http\Request;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Http\ResourceDefinition;
 use Pmsrapi\V2\Http\Controllers\CrudController;
-use Pmsrapi\V2\Plugin\AbstractPlugin;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
+use Pmsrapi\V2\Plugin\AbstractPlugin;
 use Pmsrapi\V2\Plugin\PluginRouter;
 use Pmsrapi\V2\Plugin\PluginRegistrar;
 use Pmsrapi\V2\Services\OrderQueryService;
@@ -21,6 +21,7 @@ use Pmsrapi\V2\Services\UsualOrderService;
 use Pmsrapi\V2\Services\DraftOrderService;
 use Plugins\Orders\Controllers\OrderController;
 use Plugins\Orders\Controllers\TrackingController;
+use Plugins\Support\ShopContext;
 /**
  * WhatsApp inbound receiver.
  *
@@ -54,26 +55,26 @@ final class OrdersPlugin extends AbstractPlugin
     {
         $def = ResourceDefinition::fromConfig((string) "orders_active_98", []);
 
-        $router->get('/active', static fn(Request $r, array $p): Response
-            => $container->get(OrderController::class)->indexActive($r));
+        $router->get('/{shop_id}/active', ShopContext::wrap(fn(Request $r, array $p): Response
+            => $container->get(OrderController::class)->indexActive($r)));
 
-        $router->post('/', static fn(Request $r, array $p): Response
-            => $container->get(OrderController::class)->store($r));
+        $router->post('/{shop_id}', ShopContext::wrap(fn(Request $r, array $p): Response
+            => $container->get(OrderController::class)->store($r)));
 
-        $router->post('/reorder', static fn(Request $r, array $p): Response
-            => $container->get(OrderController::class)->decodeOrder($r));
+        $router->post('/{shop_id}/reorder', ShopContext::wrap(fn(Request $r, array $p): Response
+            => $container->get(OrderController::class)->decodeOrder($r)));
 
-        $router->post('/reference', static fn(Request $r, array $p): Response
-            => $container->get(OrderController::class)->referenceOrder($r));
+        $router->post('/{shop_id}/reference', ShopContext::wrap(fn(Request $r, array $p): Response
+            => $container->get(OrderController::class)->referenceOrder($r)));
 
-        $router->get('/usual/{phone}', static fn(Request $r, array $p): Response
-            => $container->get(OrderController::class)->usualFor($r, $p["phone"]));
+        $router->get('/{shop_id}/usual/{phone}', ShopContext::wrap(fn(Request $r, array $p): Response
+            => $container->get(OrderController::class)->usualFor($r, $p["phone"])));
 
-        $router->get('/active/{phone}', static fn(Request $r, array $p): Response
-            => $container->get(OrderController::class)->indexActiveForClient($r, $p["phone"]));
+        $router->get('/{shop_id}/active/{phone}', ShopContext::wrap(fn(Request $r, array $p): Response
+            => $container->get(OrderController::class)->indexActiveForClient($r, $p["phone"])));
 
-        $router->get('/{id}/tracking', static fn(Request $r, array $p): Response
-            => $container->get(TrackingController::class)->show($r, $p["id"]));
+        $router->get('/{shop_id}/{id}/tracking', ShopContext::wrap(fn(Request $r, array $p): Response
+            => $container->get(TrackingController::class)->show($r, $p["id"])));
 
     }
 }

@@ -404,13 +404,12 @@ final class CartService
 
     private function shopId(): int
     {
-        $shopId = $this->config->secret('company.shop_id');
 
-        if (!is_numeric($shopId)) {
+        if (!defined("shop_id") || !is_numeric(shop_id)) {
             throw new ApiException('Invalid configuration for shop id');
         }
 
-        return (int) $shopId;
+        return (int) shop_id;
     }
 
     private function ordersTable(): string
