@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Plugins\Whatsapp\Gateway;
 
-use Pmsrapi\V2\Cluster\ServiceClient;
+use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Exception\ConfigException;
 use Pmsrapi\V2\Exception\ServiceException;
@@ -48,7 +48,7 @@ final class WhatsappGateway
     public function __construct(
         private readonly Config $config,
         private readonly Logger $logger,
-        private readonly ServiceClient $serviceClient,
+        private readonly Repository $repo,
     ) {}
 
     /**
@@ -498,9 +498,9 @@ final class WhatsappGateway
      */
     private function token(): string
     {
-        // if ($this->shopId !== null) {
-        //     return $this->shopToken($this->shopId);
-        // }
+        if (defined("shop_id") && is_numeric(shop_id)) {
+            return $this->shopToken((string)shop_id);
+        }
 
         $token = $this->config->secret('whatsapp.gateway_token');
         if (!is_string($token) || $token === '') {
@@ -534,11 +534,11 @@ final class WhatsappGateway
 
         try {
             // nizu is a v1 service; its function_map spec must carry "version": 1.
-            $result = $this->serviceClient->call('select_row', [
-                'table' => 'shops',
-                'fields' => 'id,company_id,gateway_token',
-                'where' => "`enabled`=1 AND `phonenumber` IS NOT NULL AND `id`={$id}",
-            ]);
+            $row = $this->repo->selectRow(
+                "shops",
+                ["id" => shop_id]
+            );
+
         } catch (ServiceException $e) {
             $this->logger->warning('whatsapp: could not fetch shop from nizu', [
                 'shop_id' => $shopId,
@@ -547,7 +547,6 @@ final class WhatsappGateway
             throw new ConfigException("Could not resolve WhatsApp token for shop '{$shopId}': {$e->getMessage()}");
         }
 
-        $row = $result['values']['row'] ?? null;
         $token = is_array($row) ? ($row['gateway_token'] ?? null) : null;
         if (!is_string($token) || $token === '') {
             throw new ConfigException("Shop '{$shopId}' has no gateway token (or is not accessible).");
@@ -663,4 +662,6 @@ final class WhatsappGateway
 
         return $result === false ? null : $result;
     }
+
+
 }

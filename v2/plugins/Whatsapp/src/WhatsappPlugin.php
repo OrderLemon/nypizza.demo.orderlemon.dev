@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Plugins\Whatsapp;
 
-use Plugins\Shop\Services\ShopService;
+use Pmsrapi\V2\Services\ShopService;
 use Plugins\Whatsapp\Controllers\WhatsappController;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
-use Pmsrapi\V2\Cluster\ServiceClient;
+use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Core\Container;
 use Pmsrapi\V2\Http\Request;
@@ -71,7 +71,7 @@ final class WhatsappPlugin extends AbstractPlugin
             static fn(Container $c): WhatsappGateway => new WhatsappGateway(
                 $c->get(Config::class),
                 $c->get(Logger::class),
-                $c->get(ServiceClient::class),
+                $c->get(Repository::class),
             ),
         );
 

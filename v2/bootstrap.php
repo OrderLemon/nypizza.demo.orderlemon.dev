@@ -255,7 +255,7 @@ $container->singleton(MenuService::class, fn($c) => new MenuService(
 ));
 $container->singleton(ShopService::class, fn($c) => new ShopService(
     $c->get(Repository::class),
-     $c->get(Logger::class),
+     $c->get(Config::class),
 ));
 
 $container->singleton(DraftOrderService::class, fn($c) => new DraftOrderService(
