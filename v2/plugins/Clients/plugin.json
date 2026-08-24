@@ -1,0 +1,9 @@
+{
+    "name": "Clients",
+    "slug": "clients",
+    "description": "Clients plugin.",
+    "version": "1.0.0",
+    "author": "PMSRAPI",
+    "enabled": true,
+    "dependencies": []
+}

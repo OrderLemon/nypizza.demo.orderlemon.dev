@@ -75,25 +75,27 @@ class ConversationService
      *
      * @return array<string, mixed>|null the upserted conversation record
      */
-    public function upsertConversation(string $phone): ?array
+    public function upsertConversation(string $phone, array $data = []): ?array
     {
+        //new conversation
+        if($data === []){
+            $data = [
+                'phonenumber' => $phone,
+                'start_time' => date('Y-m-d H:i:s'),
+                'step' => 0,
+            ];
+        }
+
         $table = $this->conversationsTable();
         $existing = $this->getByPhone($phone);
 
         if ($existing === null) {
-            $id = $this->repo->insertRow($table, [
-                'phonenumber' => $phone,
-                'start_time' => date('Y-m-d H:i:s'),
-                'step' => 0,
-            ]);
+            $id = $this->repo->insertRow($table, $data);
 
             return $this->repo->selectRow($table, ['id' => $id]);
         }
 
-        $this->repo->updateById($table, (int) $existing['id'], [
-            'step_ts' => date('Y-m-d H:i:s'),
-            'order_id' => null,
-        ]);
+        $this->repo->updateById($table, (int) $existing['id'], $data);
 
         return $this->repo->selectRow($table, ['id' => $existing['id']]);
     }

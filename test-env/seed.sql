@@ -286,3 +286,6 @@ CREATE TABLE `conversations_archive_98` (
   `archived_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+INSERT INTO conversations_98 (phonenumber, start_time, step)
+VALUES ('40757976655', '2026-08-21 13:27:12', 0);

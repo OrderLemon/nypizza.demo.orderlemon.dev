@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Plugins\Whatsapp\Controllers;
 
+use Exception;
 use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\MarvinTool;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
@@ -41,7 +42,9 @@ final class WhatsappController
 {
     private string $conversationJsonPath  = "";
     private string $clientPhone  = "";
-    private string $clientName  = "";
+    private ?string $clientName  = "";
+
+    private array $messagePayload = [];
 
     public function __construct(
         private readonly WhatsappGateway $gateway,
@@ -62,52 +65,28 @@ final class WhatsappController
     public function receive(Request $request): Response
     {
         $body = $request->body;
-        $action = trim((string) ($body['a'] ?? ''));
-        $account = trim((string) ($body['phonenumber'] ?? ''));
-        $messageType = trim((string) ($body['message_type'] ?? ''));
-
-        $message = $this->extractMessage($body);
-
-        $this->clientPhone = trim((string) ($body['sender_phone'] ?? ''));
-        $this->clientName = $this->extractClientName($body);
 
         $errors = [];
+
+        $action = trim((string) ($body['a'] ?? ''));
+
         if ($action !== 'incoming') {
             $errors['a'] = 'Only the "incoming" action is handled here';
         }
-        if ($account === '') {
-            $errors['phonenumber'] = 'The receiving account phonenumber is required';
-        }
-        if ($this->clientPhone === '') {
-            $errors['sender_phone'] = 'The sender phonenumber is required';
-        }
-        if ($message === '') {
-            $errors['message'] = 'The message is required';
-        }
+
+        $errors = [...$errors, ...$this->getPayloadData($body)];
+
         if ($errors !== []) {
             $this->logger->error("whatsatpp: inbound message errors", $errors);
             throw new ValidationException($errors);
         }
 
-        $this->logger->info('whatsapp: inbound message received', [
-            'account' => $account,
-            'sender' => $this->clientPhone ,
-            'message_type' => $messageType,
-            'message' => $message,
-            'message_id' => $body['message_id'] ?? null,
-            'provider' => $body['data_provider'] ?? null,
-        ]);
-
-        $conversationId = $this->conversationId($body);
-        
-        $reply = $this->reply($message, $messageType, $conversationId);
-        
-        
+        $reply = $this->reply();
         return Response::ok([
             'received' => true,
-            'account' => $account,
-            'sender' => $this->clientPhone,
-            'message_type' => $messageType,
+            'account' => $this->messagePayload["account"],
+            'sender' => $this->messagePayload["phone_number"],
+            'message_type' => $this->messagePayload["message_type"],
             'reply' => $reply,
         ]);
     }
@@ -121,40 +100,41 @@ final class WhatsappController
      *
      * @return array{sent: bool, error?: string}
      */
-    private function marvinReply(string $sender, string $messageType, ?int $conversationId) : array
+    private function marvinReply() : array
     {
 
         $reply = $this->marvin->reply($this->loadConversations());
 
         return match ($reply["type"] ?? '') {
-            'text' => $this->sendMarvinText($sender, $reply["message"], $messageType, $conversationId),
-            MarvinTool::TrackOrder->value => $this->sendTrackingLocation($sender, $reply, $messageType, $conversationId),
-            MarvinTool::GreetWithUsual->value => $this->greetWithUsual($sender, $reply, $messageType, $conversationId),
-            MarvinTool::GetUsualForUser->value => $this->ctaWithUsualOrder($sender, $reply, $messageType, $conversationId),
-            MarvinTool::FilterProducts->value => $this->ctaWithProducts($sender, $reply, $messageType, $conversationId),
-            MarvinTool::CheckoutOrder->value => $this->ctaWithCheckout($sender, $reply, $messageType, $conversationId),
-            MarvinTool::AddToOrder->value => $this->draftStatus($sender, $reply, $messageType, $conversationId),
-            MarvinTool::RemoveFromOrder->value => $this->draftStatus($sender, $reply, $messageType, $conversationId),
+            'text' => $this->sendMarvinText($reply["message"]),
+            MarvinTool::TrackOrder->value => $this->sendTrackingLocation($reply),
+            MarvinTool::GreetWithUsual->value => $this->greetWithUsual($reply),
+            MarvinTool::GetUsualForUser->value => $this->ctaWithUsualOrder($reply),
+            MarvinTool::FilterProducts->value => $this->ctaWithProducts($reply),
+            MarvinTool::CheckoutOrder->value => $this->ctaWithCheckout($reply),
+            MarvinTool::AddToOrder->value => $this->draftStatus($reply),
+            MarvinTool::RemoveFromOrder->value => $this->draftStatus($reply),
             default => ['sent' => false, 'error' => "Marvin returned an unknown reply type: " . ($reply["type"] ?? '')],
         };
     }
 
-    private function draftStatus(string $sender, array $reply, string $messageType, ?int $conversationId) : array
+    private function draftStatus(array $reply) : array
     {
+        if( !isset($reply["message"])){
+            throw new ApiException("Marvin did not return a message or order history to send!");
+        }
+
         try {
-            if( !isset($reply["message"])){
-                throw new ApiException("Marvin did not return a message or order history to send!");
-            }
 
             $this->gateway->sendLink(
-                $sender,
+                $this->messagePayload["phone_number"],
                 $reply["message"],
                 "OPEN",
                 $this->shopLink(),
                 "To get your menu always click here",
                 null,
-                $conversationId);
-            
+                $this->messagePayload["conversation_id"]);
+
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
             $this->registerMessage($reply["message"], 'text', 'out', MarvinTool::GetUsualForUser->value);
@@ -162,8 +142,8 @@ final class WhatsappController
             return ['sent' => true];
         } catch (ApiException $e) {
             $this->logger->error('whatsapp: outbound reply failed', [
-                'sender' => $sender,
-                'message_type' => $messageType,
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
                 'error' => $e->getMessage(),
             ]);
 
@@ -171,24 +151,24 @@ final class WhatsappController
         }
     }
 
-    private function ctaWithCheckout(string $sender, array $reply, string $messageType, ?int $conversationId) : array
+    private function ctaWithCheckout(array $reply) : array
     {
         if( !isset($reply["checkout"]["reference"]) || !isset($reply["checkout"]["draft"])){
             $this->logger->error("marvin.checkout", ["checkout" => "missing reference or draft from the checkout"]);
-            return $this->sendMarvinText($sender, "Something went wrong while proceeding to checkout!", $messageType, $conversationId);
+            return $this->sendMarvinText("Something went wrong while proceeding to checkout!");
         }
 
         try {
 
             $this->gateway->sendLink(
-                $sender,
+                $this->messagePayload["phone_number"],
                 $reply["message"],
                 "OPEN",
                 $this->shopLinkWithDraft($reply["checkout"]["reference"]),
                 "To get your menu always click here",
                 null,
-                $conversationId);
-            
+                $this->messagePayload["conversation_id"]);
+
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
             $this->registerMessage($reply["message"], 'text', 'out', MarvinTool::GetUsualForUser->value);
@@ -196,8 +176,8 @@ final class WhatsappController
             return ['sent' => true];
         } catch (ApiException $e) {
             $this->logger->error('whatsapp: outbound reply failed', [
-                'sender' => $sender,
-                'message_type' => $messageType,
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
                 'error' => $e->getMessage(),
             ]);
 
@@ -205,7 +185,7 @@ final class WhatsappController
         }
     }
 
-    private function ctaWithProducts(string $sender, array $reply, string $messageType, ?int $conversationId) : array
+    private function ctaWithProducts(array $reply) : array
     {
         if( !isset($reply["message"])){
             throw new ApiException("Marvin did not return a message or order history to send!");
@@ -214,19 +194,19 @@ final class WhatsappController
         if(!isset($reply["product_ids"]) || !is_array($reply["product_ids"])
                 || count($reply["product_ids"]) < 1 ){
             //respond with the basic CTA link
-            return $this->sendMarvinText($sender, $reply["message"], $messageType, $conversationId);
+            return $this->sendMarvinText($reply["message"]);
         }
 
         try {
 
             $this->gateway->sendLink(
-                $sender,
+                $this->messagePayload["phone_number"],
                 $reply["message"],
                 "OPEN",
                 $this->shopLinkWithProducts($reply["product_ids"]),
                 "To get your menu always click here",
                 null,
-                $conversationId);
+                $this->messagePayload["conversation_id"]);
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -235,8 +215,8 @@ final class WhatsappController
             return ['sent' => true];
         } catch (ApiException $e) {
             $this->logger->error('whatsapp: outbound reply failed', [
-                'sender' => $sender,
-                'message_type' => $messageType,
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
                 'error' => $e->getMessage(),
             ]);
 
@@ -244,7 +224,7 @@ final class WhatsappController
         }
     }
 
-    private function ctaWithUsualOrder(string $sender, array $reply, string $messageType, ?int $conversationId) : array
+    private function ctaWithUsualOrder(array $reply) : array
     {
         if( !isset($reply["message"]) || !isset($reply["order"])){
             throw new ApiException("Marvin did not return a message or order history to send!");
@@ -253,19 +233,19 @@ final class WhatsappController
         //no order history, just send the text message
         //TO DO: needs fix, marvin should not return a message with no order, but if it does, we just send the text
         if(is_array($reply["order"]) && count($reply["order"]) === 0){
-            return $this->sendMarvinText($sender, $reply["message"], $messageType, $conversationId);
+            return $this->sendMarvinText($reply["message"]);
         }
 
         try {
 
             $this->gateway->sendLink(
-                $sender,
+                $this->messagePayload["phone_number"],
                 $reply["message"],
                 "OPEN",
                 $this->shopLinkWithUsualOrder($reply["order"]["hash"]),
                 "To get your menu always click here",
                 null,
-                $conversationId);
+                $this->messagePayload["conversation_id"]);
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -274,8 +254,8 @@ final class WhatsappController
             return ['sent' => true];
         } catch (ApiException $e) {
             $this->logger->error('whatsapp: outbound reply failed', [
-                'sender' => $sender,
-                'message_type' => $messageType,
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
                 'error' => $e->getMessage(),
             ]);
 
@@ -283,7 +263,7 @@ final class WhatsappController
         }
     }
 
-    private function greetWithUsual(string $sender, array $reply, string $messageType, ?int $conversationId) : array
+    private function greetWithUsual(array $reply) : array
     {
         if( !isset($reply["message"]) || !isset($reply["order_history"])){
             throw new ApiException("Marvin did not return a message or order history to send!");
@@ -292,15 +272,15 @@ final class WhatsappController
         //no order history, just send the text message
         //TO DO: needs fix, marvin should not return a message with no order, but if it does, we just send the text
         if(is_array($reply["order_history"]) && count($reply["order_history"]) === 0){
-            return $this->sendMarvinText($sender, $reply["message"], $messageType, $conversationId);
+            return $this->sendMarvinText($reply["message"]);
         }
 
         try {
             $this->gateway->sendButtons(
-                $sender,
+                $this->messagePayload["phone_number"],
                 $reply["message"],
                 $this->getButtonsForReturningUser(),
-                $conversationId);
+                $this->messagePayload["conversation_id"]);
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -309,8 +289,8 @@ final class WhatsappController
             return ['sent' => true];
         } catch (ApiException $e) {
             $this->logger->error('whatsapp: outbound reply failed', [
-                'sender' => $sender,
-                'message_type' => $messageType,
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
                 'error' => $e->getMessage(),
             ]);
 
@@ -318,19 +298,19 @@ final class WhatsappController
         }
     }
 
-    private function sendTrackingLocation(string $sender, array $reply, string $messageType, ?int $conversationId) : array
+    private function sendTrackingLocation(array $reply) : array
     {
         try {
             
-            $this->sendMarvinText($sender, $reply["message"], $messageType, $conversationId);
+            $this->sendMarvinText($reply["message"]);
         
             $this->gateway->sendLocation(
-                $sender,
+                $this->messagePayload["phone_number"],
                 $reply["tracking"]["current"]["lat"],
                 $reply["tracking"]["current"]["lng"],
                 "",
                 "",
-                $conversationId);
+                $this->messagePayload["conversation_id"]);
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -339,8 +319,8 @@ final class WhatsappController
             return ['sent' => true];
         } catch (ApiException $e) {
             $this->logger->error('whatsapp: outbound reply failed', [
-                'sender' => $sender,
-                'message_type' => $messageType,
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
                 'error' => $e->getMessage(),
             ]);
 
@@ -348,28 +328,27 @@ final class WhatsappController
         }
     }
 
-    private function sendMarvinText(string $sender, string $message, string $messageType, ?int $conversationId) : array
+    private function sendMarvinText(string $marvinReplyMessage) : array
     {
-
         try {
             $this->gateway->sendLink(
-                $sender,
-                $message,
+                $this->messagePayload["phone_number"],
+                $marvinReplyMessage,
                 "OPEN",
                 $this->shopLink(),
                 "To get your menu always click here",
                 null,
-                $conversationId);
+                $this->messagePayload["conversation_id"]);
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
-            $this->registerMessage($message, 'text', 'out');
+            $this->registerMessage($marvinReplyMessage, 'text', 'out');
 
             return ['sent' => true];
         } catch (ApiException $e) {
             $this->logger->error('whatsapp: outbound reply failed', [
-                'sender' => $sender,
-                'message_type' => $messageType,
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "text",
                 'error' => $e->getMessage(),
             ]);
 
@@ -382,19 +361,20 @@ final class WhatsappController
      *
      * @return array{sent: bool, error?: string}
      */
-    private function welcomeCTA(string $sender, string $messageType, ?int $conversationId): array
+ 
+    private function welcomeCTA(): array
     {
-        $greeting = "Hi, Welcome to Dominos Pizza!";
+        $greeting = "Hi, Welcome to New York Pizza!";
 
         try {
             $this->gateway->sendLink(
-                $sender,
+                $this->messagePayload["phone_number"],
                 $greeting,
                 "OPEN",
                 $this->shopLink(),
                 "To get your menu always click here",
                 $this->headerImage(),
-                $conversationId);
+                $this->messagePayload["conversation_id"]);
 
             // Record the greeting so Marvin knows the shopper was already
             // welcomed and does not greet them a second time.
@@ -403,8 +383,38 @@ final class WhatsappController
             return ['sent' => true];
         } catch (ApiException $e) {
             $this->logger->warning('whatsapp: outbound reply failed', [
-                'sender' => $sender,
-                'message_type' => $messageType,
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => '',
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['sent' => false, 'error' => $e->getMessage()];
+        }
+    }
+ 
+    
+    private function sendText(string $message): array
+    {
+        if(trim($message) === null){
+            return ["sent" => false, "error" => "Empty message!"];
+        }
+
+        try {
+            $this->gateway->sendText(
+                $this->messagePayload["phone_number"],
+                $message,
+                false,
+                $this->messagePayload["conversation_id"]);
+
+            // Record the greeting so Marvin knows the shopper was already
+            // welcomed and does not greet them a second time.
+            $this->registerMessage($message, 'text', 'out');
+
+            return ['sent' => true];
+        } catch (ApiException $e) {
+            $this->logger->warning('whatsapp: outbound reply failed', [
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => '',
                 'error' => $e->getMessage(),
             ]);
 
@@ -435,30 +445,90 @@ final class WhatsappController
     private function shopLink() : string
     {
         $shopLink = $this->config->secret("cta.shop_link");
-        return rtrim($shopLink, "/") . "/?phone=" . urlencode($this->clientPhone);
+        return rtrim($shopLink, "/") . "/?phone=" . urlencode($this->messagePayload["phone_number"]);
     }
 
     /**
      * Send a first welcome message and continue with CTA url.
      * @return array{sent: bool, error?: string}
      */
-    private function reply($senderMessage, string $messageType, ?int $conversationId): array
+    private function reply(): array
     {
-        $isNewClient = $this->clientService->isNewClient($this->safePhone());
+        // add/update client
+        $upsertResult = $this->clientService->upsertClient(
+        [
+            "phonenumber" => $this->messagePayload["phone_number"],
+            "full_name" => $this->messagePayload["full_name"],
+            "date_added" => date('Y-m-d H:i:s'),
+        ]);
 
-        $this->registerMessage($senderMessage, $messageType);
-        
+        //register conversation messages to json
+        $this->registerMessage($this->messagePayload["message"], $this->messagePayload["message_type"]);
+
         //create/update the conversation
-        $this->conversrationService->upsertConversation($this->clientPhone);
+        $this->conversrationService->upsertConversation($this->messagePayload["phone_number"]);
 
-        if($isNewClient){
-            $this->clientService->upsertClient($this->clientPhone, $this->clientName);
-            return ["sent" => true];
-            // return $this->welcomeCTA($this->clientPhone, $messageType, $conversationId);
+        // The shopper is answering our own location request - save it and
+        // carry on, rather than asking them for it again below.
+        if ($this->messagePayload["message_type"] === "location") {
+            $result = $this->upsertClientLocation();
+
+            $message = $result === null ? 
+                "We could not retrieve your location. Please try again later!" 
+                    : "Your location has been updated!";
+
+            return $this->sendText($message);
         }
-            
-        return ["sent" => true];
-        // return $this->marvinReply($this->clientPhone, $messageType, $conversationId);
+
+        //  || ($upsertResult["record"]["street"] ?? null) === null
+        if ($upsertResult["action"] === "inserted" ) {
+            $welcome = $this->welcomeCTA();
+
+            if($welcome["sent"] !== true){
+                return  ["sent" => false];
+            }
+
+            return $this->sendLocationRequest();
+        }
+
+        // return $this->welcomeCTA();
+        return $this->marvinReply();
+    }
+
+    /**
+     * Persist the lat/long carried by an inbound WhatsApp location message
+     * against the client record. No-op if the payload had no usable location.
+     */
+    private function upsertClientLocation(): ?array
+    {
+        $location = $this->messagePayload["location"];
+
+        if ($location === null) {
+            return null;
+        }
+
+        return $this->clientService->upsertClient(
+            [
+                "phonenumber" => $this->messagePayload["phone_number"],
+                "latitude" => $location["latitude"],
+                "longitude" => $location["longitude"]
+            ]);
+    }
+
+    private function sendLocationRequest() : array
+    {
+        try{
+            $response = $this->gateway->sendLocationRequest($this->messagePayload["phone_number"], null);
+            return ["sent" => true];
+        }catch(Exception $ex){
+              $this->logger->error('whatsapp: outbound reply failed', [
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
+                'error' => $ex->getMessage(),
+            ]);
+
+            return ['sent' => false, 'error' => $ex->getMessage()];
+        }
     }
 
     
@@ -508,7 +578,7 @@ final class WhatsappController
      */
     private function safePhone() : string
     {
-        $safe = preg_replace('/[^0-9]/', '', $this->clientPhone);
+        $safe = preg_replace('/[^0-9]/', '', $this->messagePayload["phone_number"]);
 
         if($safe === null || $safe === ''){
             throw new ApiException("Sender phonenumber is not a usable identifier!");
@@ -524,7 +594,7 @@ final class WhatsappController
         // A file that exists but has no data.messages yet (or got truncated)
         // would make count() throw on PHP 8, taking the whole request with it.
         if(!isset($conversation["data"]["messages"]) || !is_array($conversation["data"]["messages"])){
-            $conversation = ["phone" => $this->clientPhone, "data" => ["total" => 0, "messages" => []]];
+            $conversation = ["phone" => $this->messagePayload["phone_number"], "data" => ["total" => 0, "messages" => []]];
         }
 
         $totalMessages = count($conversation["data"]["messages"]);
@@ -552,7 +622,7 @@ final class WhatsappController
 
     private function initClientConversation() : bool|int
     {
-        $data = ["phone" => $this->clientPhone, "data" => ["total" => 0, "messages" =>[]]];
+        $data = ["phone" => $this->messagePayload["phone_number"], "data" => ["total" => 0, "messages" =>[]]];
 
         return file_put_contents($this->conversationJsonPath, json_encode($data), LOCK_EX);
     }
@@ -615,10 +685,65 @@ final class WhatsappController
         }elseif (isset($body['data']["message"]["content"]["interactive"]["reply"]["text"])){
             $message = trim((string) ($body['data']["message"]["content"]["interactive"]["reply"]["text"] ?? ''));
         }else{
-            $message = trim((string) ($body['data']["text"] ?? ''));
+            $message = trim((string)($body['data']["text"] ?? ''));
         }
 
         return $message;
+    }
+
+    /**
+     * Pull the lat/long out of an inbound WhatsApp location message.
+     *
+     * @param array<string, mixed> $body
+     * @return array{latitude: string, longitude: string}|null
+     */
+    private function extractLocation(array $body): ?array
+    {
+        $location = $body['data']['message']['content']['location'] ?? null;
+
+        if (!is_array($location) || !isset($location['latitude'], $location['longitude'])) {
+            return null;
+        }
+
+        return [
+            'latitude' => (string) $location['latitude'],
+            'longitude' => (string) $location['longitude'],
+        ];
+    }
+
+    private function getPayloadData(array $body) : array
+    {
+        // $this->logger->info("inbound message data", $body);
+
+        $this->messagePayload["account"] = trim((string) ($body['phonenumber'] ?? ''));
+        $this->messagePayload["message_type"] = trim((string) ($body['message_type'] ?? ''));
+        $this->messagePayload["phone_number"] = trim((string) ($body['sender_phone'] ?? ''));
+        $this->messagePayload["full_name"] = $this->extractClientName($body);
+        $this->messagePayload["message"] = $this->extractMessage($body);
+        $this->messagePayload["location"] = $this->extractLocation($body);
+        $this->messagePayload["conversation_id"] = $this->conversationId($body);
+
+        $errors = [];
+
+        if ($this->messagePayload["phone_number"] === '') {
+            $errors['sender_phone'] = 'The sender phonenumber is required';
+        }
+
+        // if ($this->messagePayload["message"] === '') {
+        //     $errors['message'] = 'The message is required';
+        // }
+
+        $this->logger->info('whatsapp: inbound message received', [
+            'account' => $this->messagePayload["account"],
+            'sender' => $this->messagePayload["phone_number"] ,
+            'message_type' => $this->messagePayload["message_type"],
+            'message' => $this->messagePayload["message"],
+            'message_id' => $body['message_id'] ?? null,
+            'provider' => $body['data_provider'] ?? null,
+        ]);
+
+
+        return $errors;
     }
 
     private function getButtonsForReturningUser() : array
