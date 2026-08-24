@@ -55,6 +55,8 @@ final class Marvin
     /** Opus 4.8 silently ignores cache_control below this many tokens. */
     private const CACHE_MIN_TOKENS = 1024;
 
+    private array $shopInfo = [];
+
     private const STALE = [
         MarvinTool::GetUsualForUser->value => '[Told them their usual. Details omitted — look it up again if asked.]',
         MarvinTool::TrackOrder->value           => '[Reported delivery status. Details omitted — look it up again if asked.]',
@@ -101,8 +103,10 @@ final class Marvin
      * @param string|null $phone from the gateway envelope. Pass it explicitly:
      *                    it is the only identity the tools can trust.
      */
-    public function reply(array $conversation, ?string $phone = null): array
+    public function reply(array $conversation, array $shopInfo, ?string $phone = null): array
     {
+        $this->shopInfo = $shopInfo;
+
         $this->tools->reset();
 
         $fallback = ['type' => 'text', 'message' => $this->fallback()];
@@ -272,7 +276,27 @@ final class Marvin
             );
         }
 
-        return $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $template);
+        //Marvin prompt requries shop name and address 
+        if(!isset($this->shopInfo["name"]) || trim($this->shopInfo["name"]) === ""){
+            throw new ApiException("Shop name required to build prompt!");
+        }
+
+        if(!isset($this->shopInfo["street"]) || trim($this->shopInfo["street"]) === ""){
+            throw new ApiException("Shop address required to build prompt!");
+        }
+
+        //build the address
+        $address = isset($this->shopInfo["country"]) ? $this->shopInfo["country"] . ", " : " ";
+        $address .= isset($this->shopInfo["city"]) ? $this->shopInfo["city"] . ", " : " ";
+        $address .= $this->shopInfo["street"] ?? " ";
+
+        $this->systemText = str_replace('{{SHOP_NAME}}', strtoupper($this->shopInfo["name"]), $template);
+
+        $this->systemText = str_replace('{{SHOP_ADDRESS}}', strtoupper($address), $template);
+
+        $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $template);
+
+        return $this->systemText;
     }
 
     /** Derived from the prompt filename, so versions stay traceable in logs. */

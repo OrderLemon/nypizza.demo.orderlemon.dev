@@ -351,14 +351,19 @@ CREATE TABLE `shops` (
 ) ENGINE=MyISAM AUTO_INCREMENT=102 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 INSERT INTO shops (
-  id, company_id, name, phonenumber, logo_picture, req_email,
+  id, company_id, name,
+  country, state, city, zip, street,
+  phonenumber, gateway_token,
+  logo_picture, req_email,
   stripe_fee_amount, stripe_comission_percentage,
   sent_subscription_reminder, sent_product_reminder, sent_link_n_qr, sent_widget
 ) VALUES (
-  98, 1, 'New York Pizza', "3197058024067", 0, 0,
+  98, 1, 'New York Pizza',
+  'be', '', 'Kasterlee', '2460', 'Hofstraat 26B',
+  '', '',
+  0, 0,
   35, 1.5,
   0, 0, 0, 0
 );
-
 INSERT INTO conversations_98 (phonenumber, start_time, step)
 VALUES ('40757976655', '2026-08-21 13:27:12', 0);

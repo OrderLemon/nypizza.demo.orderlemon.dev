@@ -115,7 +115,7 @@ final class WhatsappController
     private function marvinReply() : array
     {
 
-        $reply = $this->marvin->reply($this->loadConversations());
+        $reply = $this->marvin->reply($this->loadConversations(), $this->shopInfo());
 
         return match ($reply["type"] ?? '') {
             'text' => $this->sendMarvinText($reply["message"]),
@@ -562,6 +562,20 @@ final class WhatsappController
     }
 
     
+    private function shopInfo() : array
+    {
+        if( $this->shop === [] || $this->shop === null){
+            return [];
+        }
+        return [
+            "name" => $this->shop["name"],
+            "country" => $this->shop["country"],
+            "city" => $this->shop["city"],
+            "zip" => $this->shop["zip"],
+            "street" => $this->shop["street"],
+        ];
+    }
+
     private function loadConversations() : array
     {
         if(!defined("shop_id") || !is_numeric(shop_id)){
