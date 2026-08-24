@@ -23,12 +23,18 @@ use Pmsrapi\V2\Support\Logger;
  */
 final class MenuService
 {
+    /** The mockups that make up a generated menu.json, and the order they're assembled in. */
+    private const MENU_STRUCTURE = ["categories", "products", "campaigns"];
+
     /** @var array<int,array<string,mixed>>|null product id => product */
     private ?array $index = null;
 
     public function __construct(
         private readonly Config $config,
         private readonly Logger $logger,
+        private readonly ProductsService $productsService,
+        private readonly CategoryService $categoryService,
+        private readonly CampaignService $campaignService,
     ) {
     }
 
@@ -219,10 +225,14 @@ final class MenuService
     // ------------------------------------------------------------------ index
 
     /** @return array<int,array<string,mixed>> */
-    private function index(): array
+    public function index(): array
     {
         if ($this->index !== null) {
             return $this->index;
+        }
+
+        if(!defined("shop_id") || !is_numeric(shop_id)){
+            throw new ApiException("shop id must be a numeric value!");
         }
 
         $path = $this->config->secret('marvin.config');
@@ -231,14 +241,16 @@ final class MenuService
             throw new ApiException('marvin.config is not set in the secret config.');
         }
 
-        $raw = @file_get_contents($path);
-        if ($raw === false) {
-            throw new ApiException("Cannot read marvin.config file: {$path}");
-        }
+        $path = str_replace("{{shop_id}}", (string) shop_id, $path);
 
-        $decoded = json_decode($raw, true);
-        if (!is_array($decoded)) {
-            throw new ApiException("marvin.config is not valid JSON: {$path}");
+        $decoded = $this->readMenu($path);
+
+        // No menu.json yet, or one with nothing in it — build it from the
+        // shop's mockups (categories + products + campaigns) so Marvin and
+        // the rest of the app never have to special-case a missing file.
+        if (!$this->hasCategories($decoded)) {
+            $decoded = $this->buildMenu();
+            $this->writeMenu($path, $decoded);
         }
 
         // Same shapes Marvin::menu() accepts: a bare list, or { "menu": ... },
@@ -256,6 +268,93 @@ final class MenuService
         }
 
         return $this->index = $index;
+    }
+
+    /**
+     * Decode menu.json, or an empty array when it doesn't exist yet or is
+     * blank. A file that exists but contains invalid JSON is a real error,
+     * not "empty" — that still throws.
+     *
+     * @return array<mixed>
+     */
+    private function readMenu(string $path): array
+    {
+        if (!file_exists($path)) {
+            return [];
+        }
+
+        $raw = file_get_contents($path);
+        if ($raw === false) {
+            throw new ApiException("Cannot read marvin.config file: {$path}");
+        }
+
+        if (trim($raw) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            throw new ApiException("marvin.config is not valid JSON: {$path}");
+        }
+
+        return $decoded;
+    }
+
+    /** @param array<mixed> $decoded */
+    private function hasCategories(array $decoded): bool
+    {
+        $menu = array_is_list($decoded) ? $decoded : ($decoded['menu'] ?? []);
+        if (is_array($menu) && isset($menu['categories'])) {
+            $menu = $menu['categories'];
+        }
+
+        return is_array($menu) && $menu !== [];
+    }
+
+    /**
+     * Assemble menu.json's shape from the shop's mockups: categories nested
+     * with their products (via ProductsService::groupByCategory), and
+     * campaigns alongside them, untouched — campaigns keep their own id space
+     * and are never merged into the product index.
+     *
+     * @return array{success: bool, menu: array{categories: list<array<string,mixed>>, campaigns: list<array<string,mixed>>}}
+     */
+    private function buildMenu(): array
+    {
+        $mockups = [
+            'categories' => $this->categoryService,
+            'products'   => $this->productsService,
+            'campaigns'  => $this->campaignService,
+        ];
+
+        $loaded = [];
+        foreach (self::MENU_STRUCTURE as $mockup) {
+            $loaded[$mockup] = $mockups[$mockup]->load($mockup);
+        }
+
+        return [
+            'success' => true,
+            'menu' => [
+                'categories' => $this->productsService->groupByCategory($loaded['products'], $loaded['categories']),
+                'campaigns'  => $loaded['campaigns'],
+            ],
+        ];
+    }
+
+    /** @param array<mixed> $menu */
+    private function writeMenu(string $path, array $menu): void
+    {
+        $dir = dirname($path);
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new ApiException("Cannot create menu directory: {$dir}");
+        }
+
+        $encoded = json_encode($menu, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($encoded === false || file_put_contents($path, $encoded) === false) {
+            throw new ApiException("Cannot write menu.json file: {$path}");
+        }
+
+        $this->logger->info('menu: generated menu.json from mockups', ['path' => $path]);
     }
 
     /**

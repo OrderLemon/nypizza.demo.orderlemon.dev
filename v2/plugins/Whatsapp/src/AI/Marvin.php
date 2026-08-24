@@ -12,6 +12,7 @@ use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Helpers\CustomerHelper;
+use Pmsrapi\V2\Services\MenuService;
 use Throwable;
 
 /**
@@ -78,6 +79,7 @@ final class Marvin
     public function __construct(
         private readonly AnthropicClient $client,
         private readonly MarvinTools $tools,
+        private readonly MenuService $menuService,
         private readonly Config $config,
         private readonly Logger $logger,
     ) {}
@@ -283,12 +285,12 @@ final class Marvin
     {
         $path = $this->config->secret('marvin.prompts');
 
-        if(!defined("shop_id") || is_numeric(shop_id)){
+        if(!defined("shop_id") || !is_numeric(shop_id)){
             throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
         }
 
         $path = str_replace("{{shop_id}}", (string)shop_id, $path);
-        
+
         if (!is_string($path) || trim($path) === '') {
             throw new ApiException('marvin.prompts is not set in the secret config.');
         }
@@ -309,7 +311,7 @@ final class Marvin
      */
     private function menuJson(): string
     {
-        $menu = $this->menu();
+        $menu = $this->menuService->index();
 
         if ($menu === []) {
             throw new ApiException(
@@ -323,20 +325,6 @@ final class Marvin
         );
     }
 
-    /** @return array<mixed> */
-    public function menu(): array
-    {
-        $settings = $this->settings();
-
-        // Accept either a bare array (the file IS the menu) or { "menu": [...] }.
-        if (array_is_list($settings)) {
-            return $settings;
-        }
-
-        $menu = $settings['menu'] ?? [];
-
-        return is_array($menu) ? $menu : [];
-    }
 
     // ------------------------------------------------------- marvin.json load
 
@@ -362,9 +350,16 @@ final class Marvin
             return $this->settings;
         }
 
+        if(!defined("shop_id") || !is_numeric(shop_id)){
+            throw new ValidationException(["shop id" => "shop id must be a numeric value!"]);
+        }
+
         $path = $this->configPath();
 
+        $path = str_replace("{{shop_id}}", (string) shop_id, $path);
+
         $raw = @file_get_contents($path);
+    
         if ($raw === false) {
             throw new ApiException("Cannot read marvin.config file: {$path}");
         }
@@ -507,7 +502,7 @@ final class Marvin
                 'ok'          => true,
                 'version'     => $this->promptVersion(),
                 'model'       => $this->client->model(),
-                'menu_items'  => count($this->menu()),
+                'menu_items'  => count($this->menuService->index()),
                 'tools'       => count($this->tools->definitions()),
                 'tokens'      => $tokens,
                 'cacheable'   => $tokens >= self::CACHE_MIN_TOKENS,
