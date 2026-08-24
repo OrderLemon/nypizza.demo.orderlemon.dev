@@ -252,6 +252,7 @@ $container->singleton(UsualOrderService::class, static fn(Container $c): UsualOr
 ));
 $container->singleton(MenuService::class, fn($c) => new MenuService(
     $c->get(Config::class), $c->get(Logger::class),
+    $c->get(ProductsService::class), $c->get(CategoryService::class), $c->get(CampaignService::class),
 ));
 $container->singleton(ShopService::class, fn($c) => new ShopService(
     $c->get(Repository::class),

@@ -26,6 +26,7 @@ use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\UsualOrderService;
 use Pmsrapi\V2\Services\DraftOrderService;
+use Pmsrapi\V2\Services\MenuService;
 
 /**
  * WhatsApp inbound receiver.
@@ -62,6 +63,7 @@ final class WhatsappPlugin extends AbstractPlugin
         $registrar->singleton(Marvin::class, static fn(Container $c): Marvin => new Marvin(
             $c->get(AnthropicClient::class),
             $c->get(MarvinTools::class),
+            $c->get(MenuService::class),
             $c->get(Config::class),
             $c->get(Logger::class)
         ));
