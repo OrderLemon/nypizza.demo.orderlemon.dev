@@ -16,6 +16,7 @@ class ClientService
     function __construct(
         private readonly Repository $repo,
         protected Config $config,
+        private readonly Logger $logger,
     ){}
 
     /**
@@ -36,22 +37,24 @@ class ClientService
     /**
      * @return array<string, mixed>|null the upserted client record
      */
-    public function upsertClient(string $phone, string $name): ?array
+    public function upsertClient(array $data): ?array
     {
         // date_added must not be in updateColumns: it's a "first seen" stamp,
         // not a "last seen" one, so an existing client's date must stay put.
+        if(isset($data["latitude"]) && isset($data["longitude"])){
+            $address = $this->getClientAddress($data["latitude"], $data["longitude"]);
+            $data = [...$data, ...$address];
+        }
+
         $result = $this->repo->upsert(
             $this->clientsTable(),
-            [
-                'phonenumber' => $phone,
-                'full_name' => $name,
-                'date_added' => date('Y-m-d H:i:s'),
-            ],
-            updateColumns: ['full_name'],
+            $data,
+            updateColumns: ['full_name', 'latitude', 'longitude','country','state','city','zip','street','box'],
         );
 
-        return $result['record'];
+        return $result;
     }
+
 
     /**
      * Saves checkout-supplied address/billing details against this phone's
@@ -83,6 +86,128 @@ class ClientService
         }
 
         return 'clients_' . (int) $shopId;
+    }
+
+    /**
+     * Resolves lat/lng into a postal address via the Google Geocoding API.
+     * Returns an empty array (rather than throwing) when the API is
+     * unreachable or misconfigured, so a bad lookup never blocks the
+     * client upsert that triggered it.
+     *
+     * @return array<string, string>
+     */
+    private function getClientAddress(string|int|float $latitude, string|int|float $longitude): array
+    {
+        $token = (string) $this->config->secret('google_api.location.token', '');
+        $urlTemplate = (string) $this->config->secret('google_api.location.url', '');
+
+        if ($token === '' || $urlTemplate === '') {
+            $this->logger->error('Missing google_api.location configuration');
+
+            return [];
+        }
+
+        $url = str_replace(
+            ['${latitude}', '${longitude}', '${token}'],
+            [(string) $latitude, (string) $longitude, $token],
+            $urlTemplate,
+        );
+
+        $result = $this->callGeocodeApi($url);
+
+        return $result !== null ? $this->parseGeocodeResult($result) : [];
+    }
+
+    /**
+     * Calls the Google Geocoding API and returns the best-match result, or
+     * null on failure.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function callGeocodeApi(string $url): ?array
+    {
+        $ch = curl_init($url);
+
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 10,
+        ]);
+
+        $response = curl_exec($ch);
+        $curlError = curl_error($ch);
+        $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+        curl_close($ch);
+
+        if ($response === false || $curlError !== '') {
+            $this->logger->error("Google geocode API call failed: {$curlError}");
+
+            return null;
+        }
+
+        if ($statusCode !== 200) {
+            $this->logger->error("Google geocode API returned HTTP {$statusCode}: {$response}");
+
+            return null;
+        }
+
+        $decoded = json_decode((string) $response, true);
+
+        if (!is_array($decoded) || ($decoded['status'] ?? null) !== 'OK' || !isset($decoded['results'][0])) {
+            $this->logger->error("Google geocode API returned an unexpected response: {$response}");
+
+            return null;
+        }
+
+        return $decoded['results'][0];
+    }
+
+    /**
+     * Maps a Google Geocoding "result" entry's address_components into this
+     * service's client column names. Missing components are simply omitted
+     * so callers only overwrite what Google actually returned.
+     *
+     * @param array<string, mixed> $result
+     * @return array<string, string>
+     */
+    private function parseGeocodeResult(array $result): array
+    {
+        $components = is_array($result['address_components'] ?? null)
+            ? $result['address_components']
+            : [];
+
+        $findComponent = static function (array $types, string $nameField = 'long_name') use ($components): ?string {
+            foreach ($components as $component) {
+                if (!is_array($component) || !is_array($component['types'] ?? null)) {
+                    continue;
+                }
+
+                if (array_intersect($types, $component['types'])) {
+                    return (string) ($component[$nameField] ?? '');
+                }
+            }
+
+            return null;
+        };
+
+        $streetNumber = $findComponent(['street_number']);
+        $route = $findComponent(['route']);
+        $street = trim(($route ?? '') . ($streetNumber !== null ? ' ' . $streetNumber : ''));
+
+        $fields = [
+            // 'country' column is varchar(2) — use the ISO short_name (e.g. "RO"), not the full country name.
+            'country' => $findComponent(['country'], 'short_name'),
+            'state' => $findComponent(['administrative_area_level_1']),
+            'city' => $findComponent(['locality', 'postal_town', 'administrative_area_level_2']),
+            'zip' => $findComponent(['postal_code']),
+            'street' => $street !== '' ? $street : null,
+            'box' => $findComponent(['subpremise']),
+        ];
+
+        return array_filter(
+            $fields,
+            static fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 }
 

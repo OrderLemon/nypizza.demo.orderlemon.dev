@@ -192,6 +192,20 @@ final class WhatsappGateway
         ]);
     }
 
+    /** Send a location. @return array<string, mixed> */
+    public function sendLocationRequest(
+        string $recipient,
+        ?int $conversationId = null,
+    ): array {
+        return $this->send('send_location_request_message', $recipient, $conversationId, [
+                'interactive' => [
+                    'type' => "location_request_message",
+                    'body' => ["text" => 'Would you like to share your location for a delivery purposes?'],
+                    'action' => ['name' => "send_location"],
+                ],
+        ]);
+    }
+
     /** React to a message with an emoji. @return array<string, mixed> */
     public function sendReaction(
         string $recipient,

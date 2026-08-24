@@ -35,6 +35,7 @@ final class CartService
         private readonly Config $config,
         private readonly Logger $logger,
         private readonly ClientService $clients,
+        private readonly ConversationService $conversations,
     ) {
     }
 
@@ -42,13 +43,20 @@ final class CartService
     {
         $table = $this->ordersTable();
 
-        //TO-DO: this will be removed in the future when the shop is set with a phone number
-        //instead the client will be retrieved from the db
-        $client = $this->clients->upsertClient($phoneNumber, "");
-        // $client = $this->clients->getByPhone($phoneNumber);
-        
+        $client = $this->clients->getByPhone($phoneNumber);
+
+        if($client === null){
+            throw new ApiException("No client for $phoneNumber found!");
+        }
+
+        $conversation = $this->conversations->getByPhone($phoneNumber);
+
+        if($conversation === null){
+            throw new ApiException("No active conversation for $phoneNumber found!");
+        }
+
         $id = $this->repo->insertRow($table, [
-            'full_name'    => $client["full_name"], 
+            'full_name'    => $client["full_name"] ?? "", 
             'phonenumber'  => $phoneNumber,
             'status_id'    => self::CART_STATUS_ID,
             'status_label' => self::CART_STATUS_LABEL,
@@ -62,9 +70,9 @@ final class CartService
             throw new ApiException('Failed to create cart order');
         }
 
-        $order['items'] = [];
+        $this->conversations->upsertConversation($phoneNumber, ["order_id" =>$order["id"]]);
 
- 
+        $order['items'] = [];
 
 
         return $order;

@@ -15,6 +15,15 @@ use Pmsrapi\V2\Support\Logger;
 
 final class OrderQueryService
 {
+    /** "In progress / paid" range (see v1's flows archiving notes) — never touched by archiving. */
+    private const array IN_PROGRESS_STATUS_IDS = [2, 3, 4, 5, 6, 7];
+
+    /** CartService's CART_STATUS_ID — still an open cart, not a placed order yet. */
+    private const int CART_STATUS_ID = 1;
+
+    private const int CANCELLED_STATUS_ID = 8;
+    private const string CANCELLED_STATUS_LABEL = 'cancelled';
+
     public function __construct(
         private readonly Repository $repo,
         private readonly Logger $logger,
@@ -87,6 +96,42 @@ final class OrderQueryService
 
             return null;
         }
+    }
+
+    /**
+     * @param int|null $shopId defaults to the configured company.shop_id
+     * @return bool whether the order was archived
+     */
+    public function archiveOrder(int $orderId, ?int $shopId = null): bool
+    {
+        $shopId ??= $this->shopId();
+        $ordersTable = $this->table('orders', $shopId);
+        $itemsTable = $this->table('order_items', $shopId);
+
+        $order = $this->repo->selectRow($ordersTable, ['id' => $orderId]);
+
+        if ($order === null) {
+            return false;
+        }
+
+        if (in_array((int) ($order['status_id'] ?? 0), self::IN_PROGRESS_STATUS_IDS, true)) {
+            return false;
+        }
+
+        if ((int) ($order['status_id'] ?? 0) === self::CART_STATUS_ID) {
+            $order['status_id'] = self::CANCELLED_STATUS_ID;
+            $order['status_label'] = self::CANCELLED_STATUS_LABEL;
+        }
+
+        foreach ($this->repo->selectRows($itemsTable, ['order_id' => $orderId]) as $item) {
+            $this->repo->insertRow($this->archiveTable('order_items', $shopId), $item);
+            $this->repo->deleteById($itemsTable, (int) $item['id']);
+        }
+
+        $this->repo->insertRow($this->archiveTable('orders', $shopId), $order);
+        $this->repo->deleteById($ordersTable, $orderId);
+
+        return true;
     }
 
     /** Loads an order by id and builds its receipt data, or null if not found. */
@@ -264,6 +309,11 @@ final class OrderQueryService
     private function table(string $tablePrefix, int $shopId): string
     {
         return $tablePrefix . '_active_' . $shopId;
+    }
+
+    private function archiveTable(string $tablePrefix, int $shopId): string
+    {
+        return $tablePrefix . '_archive_' . $shopId;
     }
 
     /** Every order for the configured shop, items attached. */
