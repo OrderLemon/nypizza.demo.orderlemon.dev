@@ -16,6 +16,7 @@ use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
+use Plugins\Support\ShopContext;
 
 final class CartPlugin extends AbstractPlugin
 {
@@ -32,16 +33,16 @@ final class CartPlugin extends AbstractPlugin
 
     public function routes(PluginRouter $router, Container $container): void
     {
-        $router->put('/update', static fn(Request $r): Response
-            => $container->get(CartController::class)->update($r));
+        $router->put('/{shop_id}/update', ShopContext::wrap(fn(Request $r): Response
+            => $container->get(CartController::class)->update($r)));
 
-        $router->post('/checkout', static fn(Request $r): Response
-            => $container->get(CartController::class)->checkout($r));
+        $router->post('/{shop_id}/checkout', ShopContext::wrap(fn(Request $r): Response
+            => $container->get(CartController::class)->checkout($r)));
 
-        $router->get('/{phone}', static fn(Request $r, $p): Response
-            => $container->get(CartController::class)->getCart($r, $p["phone"]));
+        $router->get('/{shop_id}/{phone}', ShopContext::wrap(fn(Request $r, array $p): Response
+            => $container->get(CartController::class)->getCart($r, $p["phone"])));
 
-        $router->get('/ticket/{id}', static fn(Request $r, array $p): Response
-            => $container->get(CartController::class)->ticketData($r, $p["id"]));
+        $router->get('/{shop_id}/ticket/{id}', ShopContext::wrap(fn(Request $r, array $p): Response
+            => $container->get(CartController::class)->ticketData($r, $p["id"])));
     }
 }

@@ -1,0 +1,9 @@
+{
+    "name": "Shop",
+    "slug": "shop",
+    "description": "Resolves shop identity (by id or phone number) against the nizu universe service's shops table, for plugins that need to determine which shop a request belongs to.",
+    "version": "1.0.0",
+    "author": "",
+    "enabled": true,
+    "dependencies": []
+}

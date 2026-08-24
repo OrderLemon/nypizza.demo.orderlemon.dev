@@ -13,6 +13,7 @@ use Pmsrapi\V2\Plugin\PluginRegistrar;
 use Pmsrapi\V2\Services\JsonService;
 use Plugins\Orders\Controllers\OrderController;
 use Plugins\Stores\Controllers\StoresController;
+use Plugins\Support\ShopContext;
 
 final class StoresPlugin extends AbstractPlugin
 {
@@ -25,7 +26,7 @@ final class StoresPlugin extends AbstractPlugin
 
     public function routes(PluginRouter $router, Container $container): void
     {
-        $router->get('/', static fn(Request $r): Response
-            => $container->get(StoresController::class)->index($r));
+        $router->get('/{shop_id}', ShopContext::wrap(fn(Request $r): Response
+            => $container->get(StoresController::class)->index($r)));
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Plugins\Whatsapp\Controllers;
 
 use Exception;
+use Plugins\Shop\Services\ShopService;
 use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\MarvinTool;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
@@ -46,6 +47,9 @@ final class WhatsappController
 
     private array $messagePayload = [];
 
+    /** @var array<string, mixed>|null the shop resolved by findShop() for this request */
+    private ?array $shop = null;
+
     public function __construct(
         private readonly WhatsappGateway $gateway,
         private readonly ClientService $clientService,
@@ -53,6 +57,7 @@ final class WhatsappController
         private readonly Logger $logger,
         private readonly Config $config,
         private readonly Marvin $marvin,
+        private readonly ShopService $shopService,
     ) {}
 
     /**
@@ -81,7 +86,12 @@ final class WhatsappController
             throw new ValidationException($errors);
         }
 
+        if(!$this->findShop()){
+            throw new ValidationException(["inexisting shop" => "Found no shop associated with this number!"]);
+        }
+
         $reply = $this->reply();
+
         return Response::ok([
             'received' => true,
             'account' => $this->messagePayload["account"],
@@ -422,6 +432,24 @@ final class WhatsappController
         }
     }
 
+
+    private function findShop(): bool
+    {
+        $shop = $this->shopService->findByPhone($this->messagePayload["shop_phone_number"]);
+
+        if ($shop === null || !isset($shop['id'])) {
+            return false;
+        }
+
+        $this->shop = $shop;
+
+        if (!defined('shop_id')) {
+            define('shop_id', (int) $shop['id']);
+        }
+
+        return true;
+    }
+
     private function headerImage() : ?string
     {
         return $this->config->secret("cta.header.image");
@@ -445,7 +473,7 @@ final class WhatsappController
     private function shopLink() : string
     {
         $shopLink = $this->config->secret("cta.shop_link");
-        return rtrim($shopLink, "/") . "/?phone=" . urlencode($this->messagePayload["phone_number"]);
+        return rtrim($shopLink, "/") . "/?phone=" . urlencode($this->messagePayload["phone_number"] . "&shop_id=" . shop_id);
     }
 
     /**
@@ -722,11 +750,16 @@ final class WhatsappController
         $this->messagePayload["message"] = $this->extractMessage($body);
         $this->messagePayload["location"] = $this->extractLocation($body);
         $this->messagePayload["conversation_id"] = $this->conversationId($body);
+        $this->messagePayload["shop_phone_number"] = trim((string) ($body['phonenumber'] ?? ''));
 
         $errors = [];
 
         if ($this->messagePayload["phone_number"] === '') {
-            $errors['sender_phone'] = 'The sender phonenumber is required';
+            $errors['sender_phone'] = 'The sender phonenumber was not received!';
+        }
+
+        if ($this->messagePayload["shop_phone_number"] === '') {
+            $errors['shop_phone_number'] = 'The shop phonenumber was not received!';
         }
 
         // if ($this->messagePayload["message"] === '') {

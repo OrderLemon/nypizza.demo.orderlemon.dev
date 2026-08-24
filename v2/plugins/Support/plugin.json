@@ -1,0 +1,9 @@
+{
+    "name": "Support",
+    "slug": "support",
+    "description": "Shared shop-scoped route helper (ShopContext) used by Cart, Catalog, Clients, Orders, and Stores. Registers no routes or services of its own.",
+    "version": "1.0.0",
+    "author": "",
+    "enabled": true,
+    "dependencies": []
+}

@@ -22,7 +22,7 @@ final class ClientsController
 
         $info = $this->clients->getByPhone($phoneNumber);
 
-        if($info === []){
+        if($info === [] || $info === null){
             return Response::error(404, ["not found" => "No client for this phone number!"]);
         }
 
