@@ -9,6 +9,7 @@ use Plugins\Whatsapp\AI\MarvinTools;
 use Plugins\Whatsapp\AI\MarvinTool;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Exception\ApiException;
+use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Helpers\CustomerHelper;
 use Throwable;
@@ -282,6 +283,12 @@ final class Marvin
     {
         $path = $this->config->secret('marvin.prompts');
 
+        if(!defined("shop_id") || is_numeric(shop_id)){
+            throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
+        }
+
+        $path = str_replace("{{shop_id}}", (string)shop_id, $path);
+        
         if (!is_string($path) || trim($path) === '') {
             throw new ApiException('marvin.prompts is not set in the secret config.');
         }

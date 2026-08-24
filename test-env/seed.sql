@@ -287,5 +287,78 @@ CREATE TABLE `conversations_archive_98` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+CREATE TABLE `shops` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `name` varchar(200) NOT NULL,
+  `country` varchar(2) DEFAULT NULL,
+  `state` varchar(200) DEFAULT NULL,
+  `city` varchar(200) DEFAULT NULL,
+  `zip` varchar(10) DEFAULT NULL,
+  `street` varchar(200) DEFAULT NULL,
+  `longitude` varchar(12) DEFAULT NULL,
+  `latitude` varchar(11) DEFAULT NULL,
+  `phonenumber` varchar(14) DEFAULT NULL,
+  `contact_phonenumber` varchar(35) DEFAULT NULL,
+  `catalog_id` varchar(20) DEFAULT NULL,
+  `iban` varchar(34) DEFAULT NULL,
+  `b2b` tinyint(1) DEFAULT 0,
+  `accept_cash` tinyint(1) unsigned DEFAULT 0,
+  `accept_same_day_order` tinyint(1) DEFAULT 1,
+  `date_created` datetime DEFAULT current_timestamp(),
+  `enabled` tinyint(1) DEFAULT 1,
+  `min_timeframe` varchar(2) DEFAULT NULL,
+  `accept_pickup` tinyint(1) unsigned DEFAULT 1,
+  `accept_delivery` tinyint(1) DEFAULT 0,
+  `accept_same_day_delivery` tinyint(1) DEFAULT 0,
+  `accept_same_day_pickup` tinyint(1) DEFAULT 1,
+  `req_instructions` tinyint(1) DEFAULT 0,
+  `logo_picture` tinyint(1) NOT NULL DEFAULT 0,
+  `banner_picture` tinyint(1) DEFAULT 0,
+  `delivery_fee` decimal(10,2) DEFAULT NULL,
+  `min_amount` decimal(10,2) DEFAULT NULL,
+  `req_email` tinyint(1) NOT NULL DEFAULT 0,
+  `gateway_token` varchar(90) DEFAULT NULL,
+  `gateway_user_id` int(11) DEFAULT NULL,
+  `ol_shop_type` int(11) DEFAULT NULL,
+  `meta_shop_type` int(11) DEFAULT NULL,
+  `google_shop_type` int(11) DEFAULT NULL,
+  `stripe_normal_sub_id` varchar(100) DEFAULT NULL,
+  `stripe_metered_sub_id` varchar(100) DEFAULT NULL,
+  `nizu_normal_sub_id` varchar(20) DEFAULT NULL,
+  `nizu_metered_sub_id` varchar(20) DEFAULT NULL,
+  `stripe_fee_amount` int(11) NOT NULL DEFAULT 35,
+  `stripe_comission_percentage` double(10,2) NOT NULL DEFAULT 1.50,
+  `sent_subscription_reminder` tinyint(1) NOT NULL DEFAULT 0,
+  `sent_product_reminder` tinyint(1) NOT NULL DEFAULT 0,
+  `sent_link_n_qr` tinyint(1) NOT NULL DEFAULT 0,
+  `sent_widget` tinyint(1) NOT NULL DEFAULT 0,
+  `qr_code_path` text DEFAULT NULL,
+  `welcome_message_title` varchar(20) DEFAULT NULL,
+  `welcome_message` text DEFAULT NULL,
+  `meta_waba_id` varchar(20) DEFAULT NULL,
+  `meta_namespace` varchar(36) DEFAULT NULL,
+  `meta_template_name` varchar(50) DEFAULT NULL,
+  `flow_template_id` varchar(20) DEFAULT 'lotr_reference',
+  `meta_business_id` varchar(20) DEFAULT NULL,
+  `allow_support` tinyint(1) DEFAULT 0,
+  `allow_shop_support` tinyint(1) DEFAULT 0,
+  `accept_online` tinyint(1) unsigned DEFAULT 1,
+  `accept_cash_delivery` tinyint(1) unsigned DEFAULT 0,
+  `partner_id` int(11) DEFAULT NULL,
+  `owner_id` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=MyISAM AUTO_INCREMENT=102 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+INSERT INTO shops (
+  id, company_id, name, phonenumber, logo_picture, req_email,
+  stripe_fee_amount, stripe_comission_percentage,
+  sent_subscription_reminder, sent_product_reminder, sent_link_n_qr, sent_widget
+) VALUES (
+  98, 1, 'New York Pizza', "3197058024067", 0, 0,
+  35, 1.5,
+  0, 0, 0, 0
+);
+
 INSERT INTO conversations_98 (phonenumber, start_time, step)
 VALUES ('40757976655', '2026-08-21 13:27:12', 0);

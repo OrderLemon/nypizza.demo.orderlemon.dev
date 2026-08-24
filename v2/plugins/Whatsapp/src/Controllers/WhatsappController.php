@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Plugins\Whatsapp\Controllers;
 
 use Exception;
-use Plugins\Shop\Services\ShopService;
+use Pmsrapi\v2\Services\ShopService;
 use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\MarvinTool;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
@@ -87,8 +87,10 @@ final class WhatsappController
         }
 
         if(!$this->findShop()){
+            $this->logger->error("whatsatpp: shop errors", ["shop not found" => "No shop found for this phone number {$this->messagePayload["shop_phone_number"]}"]);
             throw new ValidationException(["inexisting shop" => "Found no shop associated with this number!"]);
         }
+        // $this->logger->info("whatsatpp: shop details", $this->shop);
 
         $reply = $this->reply();
 
@@ -435,7 +437,7 @@ final class WhatsappController
 
     private function findShop(): bool
     {
-        $shop = $this->shopService->findByPhone($this->messagePayload["shop_phone_number"]);
+        $shop = $this->shopService->getByPhone($this->messagePayload["shop_phone_number"]);
 
         if ($shop === null || !isset($shop['id'])) {
             return false;
@@ -562,12 +564,18 @@ final class WhatsappController
     
     private function loadConversations() : array
     {
+        if(!defined("shop_id") || !is_numeric(shop_id)){
+            throw new ValidationException(["shop id" => "Shop Id must be a numeric a numeric value!"]);
+        }
+
         $convDir = $this->config->secret("local_resources.conversations.path");
 
         if($convDir === null || trim((string) $convDir) === ""){
             throw new ApiException("Path to conversation directory is invalid!");
         }
    
+        $convDir = str_replace("{{shop_id}}", (string)(shop_id), $convDir);
+        
         if(!file_exists($convDir)){
             if(!mkdir($convDir, 0770, true)){
                 throw new ApiException("Could not create conversations directory!");
