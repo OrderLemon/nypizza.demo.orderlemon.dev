@@ -447,7 +447,7 @@ final class WhatsappController
     private function shopLink() : string
     {
         $shopLink = $this->config->secret("cta.shop_link");
-        return rtrim($shopLink, "/") . "/?phone=" . urlencode($this->messagePayload["phone_number"]) . "&shop_id=" . shop_id;
+        return rtrim($shopLink, "/") . "/?phonenumber=" . urlencode($this->messagePayload["phone_number"]) . "&shop_id=" . shop_id;
     }
 
     /**
