@@ -27,6 +27,7 @@ use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\UsualOrderService;
 use Pmsrapi\V2\Services\CartService;
 use Pmsrapi\V2\Services\MenuService;
+use Pmsrapi\V2\Services\ChatTranscriptService;
 
 /**
  * WhatsApp inbound receiver.
@@ -88,6 +89,7 @@ final class WhatsappPlugin extends AbstractPlugin
                 $c->get(Config::class),
                 $c->get(Marvin::class),
                 $c->get(ShopService::class),
+                $c->get(ChatTranscriptService::class),
             ),
         );
     }

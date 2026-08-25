@@ -9,6 +9,7 @@ use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Http\Request;
 use Pmsrapi\V2\Services\CartService;
 use Pmsrapi\V2\Services\OrderQueryService;
+use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
@@ -26,6 +27,7 @@ final class CartController
         private readonly OrderQueryService $queryService,
         private readonly Config $config,
         private readonly Logger $logger,
+        private readonly ChatTranscriptService $transcripts,
     ){}
 
     public function update(Request $request): Response
@@ -58,6 +60,13 @@ final class CartController
         }
 
         $order = $this->cartService->checkoutOrder($body["checkout_data"], $body["phonenumber"]);
+
+        // Marvin never sees this HTTP call — the shopper can tap the live
+        // cart link attached to every add/remove reply and finish on the web
+        // at any point in the conversation. Without this note in his
+        // transcript, his next reply has no way to know that basket is now
+        // placed and closed, and he will keep treating it as still open.
+        $this->noteCheckoutInTranscript($body["phonenumber"]);
 
         $ticketUrl = $this->queryService->createTicket($order["id"]);
 
@@ -104,6 +113,31 @@ final class CartController
 
         return Response::ok($fullOrder);
 
+    }
+
+    /**
+     * Records that this phone's order was just checked out via the web link,
+     * so Marvin::history() {@see \Plugins\Whatsapp\AI\Marvin} carries the
+     * fact into the shopper's very next message. Best-effort: a transcript
+     * write failure must never fail the checkout itself.
+     */
+    private function noteCheckoutInTranscript(string $phone) : void
+    {
+        try {
+            $this->transcripts->append(
+                $phone,
+                "[System note - not shown to the shopper: they just finished checkout "
+                    . "on the web for the order you were building. It is placed and done, "
+                    . "and you have no way to change it anymore. Anything they ask for next "
+                    . "is a brand-new order - call add_to_order like usual, a fresh basket "
+                    . "opens on its own.]",
+                'out',
+                'text',
+                'checkout_completed',
+            );
+        } catch (\Throwable $ex) {
+            $this->logger->error("whatsapp: checkout transcript note", ["error" => $ex->getMessage()]);
+        }
     }
 
     private function sendTicketToClient(string $phone, string $pickupDate,  string $ticketUrl) : bool

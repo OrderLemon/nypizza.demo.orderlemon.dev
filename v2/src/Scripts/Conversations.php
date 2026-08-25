@@ -9,7 +9,11 @@ declare(strict_types=1);
  * reminders, msgids...) for a phone number. The actual message transcript
  * lives separately, one JSON file per phone under
  * local_resources.conversations.path (see
- * WhatsappController::loadConversations for the read/write side).
+ * Pmsrapi\V2\Services\ChatTranscriptService for the read/write side).
+ * loadTranscript() below is a read-only, shop-id-parameterised copy of that
+ * same format rather than a call into the service, because this script loops
+ * over several shop ids explicitly and the service resolves its path from
+ * the request-scoped "shop_id" constant.
  *
  * A conversation is considered stale once its last INBOUND (customer-sent,
  * direction "in") message is older than IDLE_SECONDS. Stale conversations are
