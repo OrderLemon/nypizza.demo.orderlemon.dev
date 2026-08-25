@@ -8,6 +8,7 @@ use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Orders\OrderStatus;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Core\Config;
+use Pmsrapi\V2\Services\OrderQueryService;
 
 /**
  * Delivery tracking for the demo.
@@ -36,6 +37,7 @@ final class TrackingService extends JsonService
     function __construct(
         protected Logger $logger,
         protected Config $config,
+        private readonly OrderQueryService $orders,
     ) {
         parent::__construct($logger, $config);
     }
@@ -204,7 +206,7 @@ final class TrackingService extends JsonService
     /** The order itself, for status checks and lazy seeding. */
     public function findOrder(int $orderId): ?array
     {
-        return $this->findBy(self::ORDERS_MOCKUP, 'id', $orderId);
+        return $this->orders->getById($orderId);
     }
 
     private function findBy(string $mockup, string $key, int $value, bool $reverse = false): ?array

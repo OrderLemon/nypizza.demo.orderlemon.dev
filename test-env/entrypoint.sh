@@ -9,6 +9,7 @@ MOCKUPS="${MOCKUPS:-/opt/pmsrapi/mockups/}"
 MARVIN_1="${MARVIN:-/opt/pmsrapi/marvin.v1.txt}"
 MARVIN_2="${MARVIN:-/opt/pmsrapi/marvin.v2.txt}"
 MARVIN_3="${MARVIN:-/opt/pmsrapi/marvin.v3.txt}"
+MARVIN_4="${MARVIN:-/opt/pmsrapi/marvin.v4.txt}"
 MENU="${MENU:-/opt/pmsrapi/menu.json}"
 PORT="${PMSRAPI_PORT:-8080}"
 
@@ -24,6 +25,7 @@ mkdir -p /home/demo.data/marvin_prompts/
 cp "${MARVIN_1}" /home/demo.data/marvin_prompts/marvin.v1.txt
 cp "${MARVIN_2}" /home/demo.data/marvin_prompts/marvin.v2.txt
 cp "${MARVIN_3}" /home/demo.data/marvin_prompts/marvin.v3.txt
+cp "${MARVIN_4}" /home/demo.data/marvin_prompts/marvin.v4.txt
 mkdir -p /home/demo.data/98/menu
 cp "${MENU}" /home/demo.data/98/menu.json
 mkdir -p /home/errors/

@@ -199,7 +199,6 @@ $container->singleton(OrderQueryService::class, static fn(Container $c): OrderQu
     $c->get(Repository::class),
     $c->get(Logger::class),
     $c->get(Config::class),
-    $c->get(TrackingService::class),
 ));
 
 $container->singleton(ConfigService::class, static fn(Container $c): ConfigService => new ConfigService(
@@ -225,7 +224,8 @@ $container->singleton(CampaignService::class, static fn(Container $c): CampaignS
 ));
 $container->singleton(TrackingService::class, static fn(Container $c): TrackingService => new TrackingService(
     $c->get(Logger::class),
-    $c->get(Config::class)
+    $c->get(Config::class),
+    $c->get(OrderQueryService::class),
 ));
 $container->singleton(ClientService::class, static fn(Container $c): ClientService => new ClientService(
     $c->get(Repository::class),
@@ -247,8 +247,8 @@ $container->singleton(CartService::class, static fn(Container $c): CartService =
 ));
 
 $container->singleton(UsualOrderService::class, static fn(Container $c): UsualOrderService => new UsualOrderService(
-      $c->get(Logger::class),
-    $c->get(Config::class)
+    $c->get(Repository::class),
+    $c->get(Logger::class)
 ));
 $container->singleton(MenuService::class, fn($c) => new MenuService(
     $c->get(Config::class), $c->get(Logger::class),

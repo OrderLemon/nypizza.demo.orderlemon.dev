@@ -136,7 +136,7 @@ final class MenuService
      *
      * @param list<mixed> $optionIds
      * @return array{
-     *   config: list<array{group_id:string,option_id:string,item_description:string,quantity:int,unit_price:float}>,
+     *   config: list<array{group_id:string,option_id:string,product_id:int,item_description:string,quantity:int,unit_price:float}>,
      *   unknown: list<string>,
      *   missing: list<array<string,mixed>>,
      *   delta: float
@@ -178,6 +178,7 @@ final class MenuService
                 $config[] = [
                     'group_id'         => $groupId,
                     'option_id'        => $optionId,
+                    'product_id'       => (int) ($option['product_id'] ?? 0),
                     'item_description' => (string) ($option['label'] ?? $optionId),
                     'quantity'         => 1,
                     'unit_price'       => $price,

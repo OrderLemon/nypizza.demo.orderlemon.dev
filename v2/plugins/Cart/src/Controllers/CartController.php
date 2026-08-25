@@ -59,26 +59,24 @@ final class CartController
 
         $order = $this->cartService->checkoutOrder($body["checkout_data"], $body["phonenumber"]);
 
-        
-
-        // $ticketUrl = $this->queryService->createTicket($order["id"]);
+        $ticketUrl = $this->queryService->createTicket($order["id"]);
 
         
-        // if($ticketUrl === null){
-        //     // $this->sendOrderLostMessage($data["phonenumber"]);
-        //     //send order lost message
-        //     return Response::Ok(
-        //         [
-        //             "status" => "failure",
-        //             "message" => "Order was created but the ticked could not be generated!",
-        //             "data" => ["order_id" => $order["id"]]
-        //         ]);
-        // }
+        if($ticketUrl === null){
+            $this->sendOrderLostMessage($body["phonenumber"]);
+            //send order lost message
+            return Response::Ok(
+                [
+                    "status" => "failure",
+                    "message" => "Order was created but the ticked could not be generated!",
+                    "data" => ["order_id" => $order["id"]]
+                ]);
+        }
 
-        // // currently using order time for pickup time
-        // $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
+        // currently using order time for pickup time
+        $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
 
-        // $this->sendThankYouMessage($body["phonenumber"]);
+        $this->sendThankYouMessage($body["phonenumber"]);
 
         return Response::Ok(
             [

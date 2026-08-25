@@ -28,7 +28,6 @@ final class OrderQueryService
         private readonly Repository $repo,
         private readonly Logger $logger,
         private readonly Config $config,
-        private readonly TrackingService $trackingService,
     ) {
     }
 

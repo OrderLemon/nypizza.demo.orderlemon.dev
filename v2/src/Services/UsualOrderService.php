@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 namespace Pmsrapi\V2\Services;
+use Pmsrapi\V2\Database\Repository;
+use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Helpers\CustomerHelper;
 use Pmsrapi\V2\Exception\ApiException;
+use Pmsrapi\V2\Support\Logger;
 
 /**
  * "The usual" — the basket a returning shopper orders most often.
@@ -24,8 +27,13 @@ use Pmsrapi\V2\Exception\ApiException;
  * Calling something "the usual" when it was ordered once reads as a system
  * pretending to know you.
  */
-final class UsualOrderService extends JsonService
+final class UsualOrderService
 {
+    function __construct(
+        private readonly Repository $repo,
+        private readonly Logger $logger,
+    ){}
+
     public const MOCKUP = 'orders';
 
     /** How many recent orders to consider. */
@@ -130,14 +138,31 @@ final class UsualOrderService extends JsonService
     /**
      * A stable signature for what was actually eaten. Same meal, same string —
      * regardless of price changes, item ordering, or option ordering.
+     *
+     * There is no nested "config" array any more: a config IS an order_items
+     * row, distinguished from a normal line only by carrying a parent_id that
+     * points at its host line's id. So this walks the flat list once to group
+     * children under their parent, then fingerprints each top-level line by
+     * its own product_id/campaign_id/quantity plus its children's
+     * product_id:quantity pairs, sorted so option order never matters.
      */
     public function fingerprint(array $order): string
     {
+        $items = array_values(array_filter((array) ($order['items'] ?? []), 'is_array'));
+
+        $childrenByParent = [];
+        foreach ($items as $item) {
+            $parentId = (int) ($item['parent_id'] ?? 0);
+            if ($parentId !== 0) {
+                $childrenByParent[$parentId][] = $item;
+            }
+        }
+
         $parts = [];
 
-        foreach ((array) ($order['items'] ?? []) as $item) {
-            if (!is_array($item)) {
-                continue;
+        foreach ($items as $item) {
+            if ((int) ($item['parent_id'] ?? 0) !== 0) {
+                continue;   // a config, folded into its host below
             }
 
             $productId = (int) ($item['product_id'] ?? 0);
@@ -145,23 +170,17 @@ final class UsualOrderService extends JsonService
                 continue;   // discount / adjustment line
             }
 
-            $campaingId = (int)($item['campaign_id'] ?? null);
-
-            //the options part will be removed as the options will be products themselvs
-            $options = [];
-            foreach ((array) ($item['config'] ?? []) as $option) {
-                if (!is_array($option)) {
-                    continue;
-                }
-                $options[] = ($option['group_id'] ?? '') . ':' . ($option['option_id'] ?? '');
+            $configs = [];
+            foreach ($childrenByParent[(int) ($item['id'] ?? 0)] ?? [] as $config) {
+                $configs[] = ((int) ($config['product_id'] ?? 0)) . ':' . max(1, (int) ($config['quantity'] ?? 1));
             }
-            sort($options);
+            sort($configs);
 
             $parts[] = implode('|', [
                 $productId,
-                $campaingId,
+                (int) ($item['campaign_id'] ?? 0),
                 max(1, (int) ($item['quantity'] ?? 1)),
-                implode(',', $options),
+                implode(',', $configs),
             ]);
         }
 
@@ -181,14 +200,28 @@ final class UsualOrderService extends JsonService
      * in only as a hint for the confirmation message — recalculate from the live
      * catalogue before writing the new order, or a stale discount rides along.
      *
+     * Configs are folded in from the flat list by parent_id (see fingerprint()),
+     * the same as CartService/MarvinTools see them — there is no nested
+     * "config" array on a real order_items row.
+     *
      * @return list<array<string,mixed>>
      */
     private function basket(array $order): array
     {
+        $rows = array_values(array_filter((array) ($order['items'] ?? []), 'is_array'));
+
+        $childrenByParent = [];
+        foreach ($rows as $row) {
+            $parentId = (int) ($row['parent_id'] ?? 0);
+            if ($parentId !== 0) {
+                $childrenByParent[$parentId][] = $row;
+            }
+        }
+
         $items = [];
 
-        foreach ((array) ($order['items'] ?? []) as $item) {
-            if (!is_array($item) || (int) ($item['product_id'] ?? 0) === 0) {
+        foreach ($rows as $item) {
+            if ((int) ($item['parent_id'] ?? 0) !== 0 || (int) ($item['product_id'] ?? 0) === 0) {
                 continue;
             }
 
@@ -196,19 +229,20 @@ final class UsualOrderService extends JsonService
                 'product_id'       => (int) $item['product_id'],
                 'item_description' => (string) ($item['item_description'] ?? ''),
                 'quantity'         => max(1, (int) ($item['quantity'] ?? 1)),
-                'campaign_id'      => $item["campaign_id"]
+                'campaign_id'      => $item['campaign_id'] ?? null,
             ];
 
-            if (isset($item['config']) && is_array($item['config'])) {
-                $entry['config'] = array_values(array_map(
-                    static fn(array $o): array => [
-                        'group_id'         => $o['group_id'] ?? null,
-                        'option_id'        => $o['option_id'] ?? null,
-                        'item_description' => $o['item_description'] ?? null,
-                        'quantity'         => max(1, (int) ($o['quantity'] ?? 1)),
+            $configs = $childrenByParent[(int) ($item['id'] ?? 0)] ?? [];
+
+            if ($configs !== []) {
+                $entry['config'] = array_map(
+                    static fn(array $c): array => [
+                        'product_id'       => (int) ($c['product_id'] ?? 0),
+                        'item_description' => (string) ($c['item_description'] ?? ''),
+                        'quantity'         => max(1, (int) ($c['quantity'] ?? 1)),
                     ],
-                    array_filter($item['config'], 'is_array')
-                ));
+                    $configs,
+                );
             }
 
             $items[] = $entry;
@@ -244,6 +278,11 @@ final class UsualOrderService extends JsonService
         return implode(', ', $parts);
     }
 
+    /**
+     * A config is just another order_items row, so it already carries its own
+     * unit_price and quantity in the flat list — summing every row, host and
+     * config alike, is all a total needs.
+     */
     private function total(array $order): float
     {
         $total = 0.0;
@@ -253,15 +292,7 @@ final class UsualOrderService extends JsonService
                 continue;
             }
 
-            $qty   = max(1, (int) ($item['quantity'] ?? 1));
-            $total += (float) ($item['unit_price'] ?? 0) * $qty;
-
-            foreach ((array) ($item['config'] ?? []) as $option) {
-                if (is_array($option)) {
-                    $total += (float) ($option['unit_price'] ?? 0)
-                        * max(1, (int) ($option['quantity'] ?? 1));
-                }
-            }
+            $total += (float) ($item['unit_price'] ?? 0) * max(1, (int) ($item['quantity'] ?? 1));
         }
 
         return round($total, 2);
@@ -276,26 +307,21 @@ final class UsualOrderService extends JsonService
      */
     private function historyFor(string $phone): array
     {
-        $apiUrl = $this->config->secret("orderlemon_api.url");
-        $token = $this->config->secret("orderlemon_api.token");
-
         try {
             //get the orders from db
-            $orders = [];
+            $orders = $this->repo->selectRows(
+                $this->ordersTable(),
+                ["phonenumber" => $phone]
+            );
 
-            if($orders === []){
+            if($orders === [] || $orders === null){
                 return [];
             }
 
-            //get their ids
-            $orderIds = array_column($orders,"id");
-
-            //get the order items
-            $orderItems = [];
-            //attach correct item to each order
+            //get the order items and attach the correct ones to each order
             $itemsByOrderId = [];
 
-            foreach ($orderItems as $item) {
+            foreach ($this->repo->selectRows($this->orderItemsTable()) as $item) {
                 $itemsByOrderId[$item["order_id"]][] = $item;
             }
 
@@ -319,6 +345,25 @@ final class UsualOrderService extends JsonService
         );
 
         return array_slice(array_values($orders), 0, self::WINDOW);
+    }
+
+
+    private function ordersTable() : string
+    {
+        if(!defined("shop_id") || !is_numeric(shop_id)){
+            throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
+        }
+
+        return "orders_active_" . shop_id;
+    }
+
+    private function orderItemsTable() : string
+    {
+        if(!defined("shop_id") || !is_numeric(shop_id)){
+            throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
+        }
+
+        return "order_items_active_" . shop_id;
     }
 
 }
