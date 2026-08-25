@@ -10,6 +10,7 @@ MARVIN_1="${MARVIN:-/opt/pmsrapi/marvin.v1.txt}"
 MARVIN_2="${MARVIN:-/opt/pmsrapi/marvin.v2.txt}"
 MARVIN_3="${MARVIN:-/opt/pmsrapi/marvin.v3.txt}"
 MARVIN_4="${MARVIN:-/opt/pmsrapi/marvin.v4.txt}"
+MARVIN_5="${MARVIN:-/opt/pmsrapi/marvin.v5.txt}"
 MENU="${MENU:-/opt/pmsrapi/menu.json}"
 PORT="${PMSRAPI_PORT:-8080}"
 
@@ -26,6 +27,7 @@ cp "${MARVIN_1}" /home/demo.data/marvin_prompts/marvin.v1.txt
 cp "${MARVIN_2}" /home/demo.data/marvin_prompts/marvin.v2.txt
 cp "${MARVIN_3}" /home/demo.data/marvin_prompts/marvin.v3.txt
 cp "${MARVIN_4}" /home/demo.data/marvin_prompts/marvin.v4.txt
+cp "${MARVIN_5}" /home/demo.data/marvin_prompts/marvin.v5.txt
 mkdir -p /home/demo.data/98/menu
 cp "${MENU}" /home/demo.data/98/menu.json
 mkdir -p /home/errors/

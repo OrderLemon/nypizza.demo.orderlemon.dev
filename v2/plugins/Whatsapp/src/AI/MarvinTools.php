@@ -128,10 +128,13 @@ final class MarvinTools
             [
             'name'        => MarvinTool::FilterProducts->value,
                 'description' =>
-                    'REQUIRED whenever you name or recommend specific products. The shopper cannot '
-                    . 'order anything you mention unless you call this: the order link in your reply '
-                    . 'is built from the ids you return, so without it your recommendation is a dead '
-                    . 'end and they have no way to buy it. '
+                    'REQUIRED whenever you name or recommend specific products, including on a '
+                    . 'follow-up turn about products you already named earlier in this conversation '
+                    . '— e.g. answering "does it come in a single serving?" about pizzas you named '
+                    . 'two messages ago still requires calling this again, every time, no exceptions. '
+                    . 'The shopper cannot order anything you mention unless you call this: the order '
+                    . 'link in your reply is built from the ids you return, so without it your '
+                    . 'recommendation is a dead end and they have no way to buy it. '
                     . 'Call it when they ask what is vegan, what is spicy, what something costs, '
                     . 'what is in a category, when they ask you to suggest something, and any other '
                     . 'time you end up naming products from the menu. '
@@ -141,8 +144,14 @@ final class MarvinTools
                     . 'slug, never a product name, never an id you guessed. Pass exactly the '
                     . 'products you name in your reply, so the link matches what you said. '
                     . 'The only time not to call it is when nothing in the menu matches what they '
-                    . 'asked for — then say you do not have it and suggest the closest thing you do.'
-                    . 'Always show the shopper the name of the products you have found if any.',
+                    . 'asked for — then say you do not have it and suggest the closest thing you do. '
+                    . 'The result gives you back each product\'s "name" — MANDATORY: your very next '
+                    . 'reply must say those names out loud in plain text before anything else, even '
+                    . 'if you think the shopper already knows which products you mean. A reply that '
+                    . 'only says something like "want me to add one, tap the link" without repeating '
+                    . 'the name(s) is wrong and incomplete. If a product_id you sent comes back in '
+                    . '"dropped_ids", it was not on the menu — drop it from your reply too and never '
+                    . 'mention it as available.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => [
@@ -518,15 +527,31 @@ final class MarvinTools
         return $this->attachment;
     }
 
+    /**
+     * Turn the model's chosen ids into the link attachment, and hand the
+     * matching names straight back in the tool_result. Echoing bare ids gave
+     * the model nothing to react to when composing its reply, which is how it
+     * ended up sending a link with no product names in the text next to it —
+     * returning the names here puts them right in front of the model at the
+     * moment it writes that reply. sift() also drops any id that is not on
+     * the menu, so a hallucinated id never reaches the shopper as a link.
+     */
     private function filterProducts(string $phone, array $input) : array
     {
-        if(!isset($input["product_ids"])){
-            return ["product_ids" => []];
+        if (!isset($input["product_ids"]) || !is_array($input["product_ids"])) {
+            return ["products" => []];
         }
 
-        $this->attach(MarvinTool::FilterProducts->value, ["product_ids" => $input["product_ids"]]);
+        $sifted = $this->menuService->sift($input["product_ids"]);
 
-        return ["product_ids" => $input["product_ids"]];
+        $products = array_map(
+            fn(int $id): array => ['id' => $id, 'name' => $this->menuService->name($id)],
+            $sifted['valid'],
+        );
+
+        $this->attach(MarvinTool::FilterProducts->value, ["product_ids" => $sifted['valid']]);
+
+        return ['products' => $products, 'dropped_ids' => $sifted['dropped']];
     }
 
     private function getUsualForUser(string $phone): array
