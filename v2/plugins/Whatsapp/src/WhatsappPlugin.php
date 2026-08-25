@@ -25,7 +25,7 @@ use Pmsrapi\V2\Services\ConversationService;
 use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\UsualOrderService;
-use Pmsrapi\V2\Services\DraftOrderService;
+use Pmsrapi\V2\Services\CartService;
 use Pmsrapi\V2\Services\MenuService;
 
 /**
@@ -51,7 +51,8 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(TrackingService::class),
             $c->get(OrderQueryService::class),
             $c->get(UsualOrderService::class),
-            $c->get(DraftOrderService::class),
+            $c->get(CartService::class),
+            $c->get(MenuService::class),
             $c->get(Logger::class)
         ));
  

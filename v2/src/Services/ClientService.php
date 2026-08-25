@@ -112,7 +112,10 @@ class ClientService
             $urlTemplate,
         );
 
+        
         $result = $this->callGeocodeApi($url);
+
+        $this->logger->info("Google api response for: $url", $result ?? []);
 
         return $result !== null ? $this->parseGeocodeResult($result) : [];
     }
@@ -130,6 +133,7 @@ class ClientService
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 10,
+            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4
         ]);
 
         $response = curl_exec($ch);

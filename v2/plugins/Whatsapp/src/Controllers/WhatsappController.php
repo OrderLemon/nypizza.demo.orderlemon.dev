@@ -115,21 +115,30 @@ final class WhatsappController
     private function marvinReply() : array
     {
 
-        $reply = $this->marvin->reply($this->loadConversations(), $this->shopInfo());
-
+        $reply = $this->marvin->reply($this->loadConversations(), $this->shopInfo(),  $this->messagePayload["full_name"]);
+        
+        // var_dump($reply["type"]);
+        
         return match ($reply["type"] ?? '') {
             'text' => $this->sendMarvinText($reply["message"]),
             MarvinTool::TrackOrder->value => $this->sendTrackingLocation($reply),
             MarvinTool::GreetWithUsual->value => $this->greetWithUsual($reply),
             MarvinTool::GetUsualForUser->value => $this->ctaWithUsualOrder($reply),
             MarvinTool::FilterProducts->value => $this->ctaWithProducts($reply),
-            MarvinTool::CheckoutOrder->value => $this->ctaWithCheckout($reply),
+            MarvinTool::CheckoutOrder->value => $this->draftStatus($reply),
             MarvinTool::AddToOrder->value => $this->draftStatus($reply),
             MarvinTool::RemoveFromOrder->value => $this->draftStatus($reply),
             default => ['sent' => false, 'error' => "Marvin returned an unknown reply type: " . ($reply["type"] ?? '')],
         };
     }
 
+    /**
+     * The shared reply path for add_to_order, remove_from_order and
+     * checkout_order: read the basket back in the message and send the plain
+     * shop link, no reference or product ids appended. All three tools work
+     * off the cart the phone number already owns server side, so the web
+     * front end picks it straight up — nothing to encode in the URL.
+     */
     private function draftStatus(array $reply) : array
     {
         if( !isset($reply["message"])){
@@ -148,42 +157,10 @@ final class WhatsappController
                 $this->messagePayload["conversation_id"]);
 
             // Log Marvin's own turn, or he will not see his previous answers on
-            // the next message and the thread loses all context.
-            $this->registerMessage($reply["message"], 'text', 'out', MarvinTool::GetUsualForUser->value);
-
-            return ['sent' => true];
-        } catch (ApiException $e) {
-            $this->logger->error('whatsapp: outbound reply failed', [
-                'sender' => $this->messagePayload["phone_number"],
-                'message_type' => "",
-                'error' => $e->getMessage(),
-            ]);
-
-            return ['sent' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-    private function ctaWithCheckout(array $reply) : array
-    {
-        if( !isset($reply["checkout"]["reference"]) || !isset($reply["checkout"]["draft"])){
-            $this->logger->error("marvin.checkout", ["checkout" => "missing reference or draft from the checkout"]);
-            return $this->sendMarvinText("Something went wrong while proceeding to checkout!");
-        }
-
-        try {
-
-            $this->gateway->sendLink(
-                $this->messagePayload["phone_number"],
-                $reply["message"],
-                "OPEN",
-                $this->shopLinkWithDraft($reply["checkout"]["reference"]),
-                "To get your menu always click here",
-                null,
-                $this->messagePayload["conversation_id"]);
-
-            // Log Marvin's own turn, or he will not see his previous answers on
-            // the next message and the thread loses all context.
-            $this->registerMessage($reply["message"], 'text', 'out', MarvinTool::GetUsualForUser->value);
+            // the next message and the thread loses all context. Tagged with
+            // the tool that actually produced this reply, not a fixed one, so
+            // Marvin::history() only ever staleifies the right kind of turn.
+            $this->registerMessage($reply["message"], 'text', 'out', $reply["type"] ?? null);
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -455,11 +432,6 @@ final class WhatsappController
     private function headerImage() : ?string
     {
         return $this->config->secret("cta.header.image");
-    }
-
-    private function shopLinkWithDraft(string $reference) : string
-    {
-        return $this->shopLink() . "&reference=" . $reference;
     }
 
     private function shopLinkWithProducts(array $ids) : string

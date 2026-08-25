@@ -10,7 +10,8 @@ use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\TrackingService;
 use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\UsualOrderService;
-use Pmsrapi\V2\Services\DraftOrderService;
+use Pmsrapi\V2\Services\CartService;
+use Pmsrapi\V2\Services\MenuService;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Helpers\JsonHelper;
 use Throwable;
@@ -36,13 +37,17 @@ use Throwable;
  */
 final class MarvinTools
 {
+    /** A shopper typo'd quantity ("2000 fries") should not become a real line. */
+    private const int MAX_QUANTITY = 20;
+
     private ?array $attachment = null;
 
     public function __construct(
         private readonly TrackingService $tracking_service,
         private readonly OrderQueryService $orderService,
         private readonly UsualOrderService $usualOrderService,
-        private readonly DraftOrderService $draftService,
+        private readonly CartService $cartService,
+        private readonly MenuService $menuService,
         private readonly Logger $logger,
     ) {}
 
@@ -280,53 +285,221 @@ final class MarvinTools
         }
     }
 
+    /**
+     * Validate the product and its chosen options against the menu, then hand a
+     * priced item to the cart service. MenuService is the only thing that ever
+     * touches a price here — Marvin passes an id, a quantity and bare option
+     * ids, nothing else.
+     */
     private function addToOrder(string $phone, array $input): array
     {
-        $result = $this->draftService->add(
-            $phone,
-            (int) ($input['product_id'] ?? 0),
-            (int) ($input['quantity'] ?? 1),
-            is_array($input['option_ids'] ?? null) ? $input['option_ids'] : []
-        );
+        $productId = (int) ($input['product_id'] ?? 0);
+        $quantity  = max(1, min(self::MAX_QUANTITY, (int) ($input['quantity'] ?? 1)));
+        $optionIds = is_array($input['option_ids'] ?? null) ? $input['option_ids'] : [];
 
-        // Attach only on a real change, so a needs_options round trip does not
-        // send the shopper a basket that did not move.
-        if (($result['ok'] ?? false) === true) {
-            $this->attach(MarvinTool::AddToOrder->value, ['draft' => $result['draft']]);
+        if (!$this->menuService->has($productId)) {
+            return ['ok' => false, 'reason' => 'unknown_product', 'product_id' => $productId];
         }
 
-        return $result;
+        // Deals have combo slots with category constraints — a different
+        // problem from a configurable product, and out of scope in chat.
+        if ($this->menuService->isDeal($productId)) {
+            return [
+                'ok'     => false,
+                'reason' => 'deal_not_supported',
+                'name'   => $this->menuService->name($productId),
+            ];
+        }
+
+        $resolved = $this->menuService->resolveOptions($productId, $optionIds);
+
+        // A required choice is missing: tell Marvin what to ask, change nothing.
+        if ($resolved['missing'] !== []) {
+            return [
+                'ok'         => false,
+                'reason'     => 'needs_options',
+                'product_id' => $productId,
+                'name'       => $this->menuService->name($productId),
+                'needs'      => $resolved['missing'],
+            ];
+        }
+
+        $product = $this->menuService->product($productId) ?? [];
+        $categoryId = (int) ($product['category_id'] ?? 0);
+        $vat = (int) ($product['vat_percentage'] ?? 0);
+
+        $item = [
+            'product_id'       => $productId,
+            'category_id'      => $categoryId,
+            'item_description' => $this->menuService->name($productId),
+            'unit_price'       => $this->menuService->basePrice($productId),
+            'vat_percentage'   => $vat,
+            'quantity'         => $quantity,
+            // Every config applies to every unit of its host, so it carries
+            // the same quantity rather than its own.
+            'configs'          => array_map(
+                static fn(array $c): array => [
+                    'product_id'        => $c['product_id'],
+                    'category_id'       => $categoryId,
+                    'item_description'  => $c['item_description'],
+                    'unit_price'        => $c['unit_price'],
+                    'vat_percentage'    => $vat,
+                    'quantity'          => $quantity,
+                ],
+                $resolved['config'],
+            ),
+        ];
+
+        $order = $this->cartService->updateCart([$item], $phone);
+        $draft = $this->summarize($order);
+
+        $this->attach(MarvinTool::AddToOrder->value, ['draft' => $draft]);
+
+        return [
+            'ok'              => true,
+            'added'           => $this->menuService->name($productId),
+            'unknown_options' => $resolved['unknown'],
+            'total'           => $order['total'],
+            'draft'           => $draft,
+        ];
     }
 
+    /**
+     * Remove a whole line (and, via the cart service, every config attached to
+     * it). The line's own catalog fields are read back from the cart first —
+     * Marvin only ever knows the line_id, and the cart service still wants a
+     * full item shape even though none of it is used on a delete.
+     */
     private function removeFromOrder(string $phone, array $input): array
     {
-        $result = $this->draftService->remove($phone, (int) ($input['line_id'] ?? 0));
+        $lineId = (int) ($input['line_id'] ?? 0);
 
-        if (($result['ok'] ?? false) === true) {
-            $this->attach(MarvinTool::RemoveFromOrder->value, ['draft' => $result['draft']]);
+        $order = $this->cartService->activeOrderFor($phone);
+
+        if ($order === null) {
+            return ['ok' => false, 'reason' => 'no_active_cart'];
         }
 
-        return $result;
-    }
+        $line = $this->findLine((int) $order['id'], $lineId);
 
-    private function checkoutOrder(string $phone): array
-    {
-        $result = $this->draftService->checkout($phone);
-
-        if (($result['ok'] ?? false) !== true) {
-            return $result;
+        if ($line === null) {
+            return ['ok' => false, 'reason' => 'no_such_line'];
         }
 
-        // The controller builds the URL from the reference.
-        $this->attach(MarvinTool::CheckoutOrder->value, [ "checkout" =>[
-            'reference' => $result['reference'],
-            'draft'     => $result['draft'],
-        ]]);
+        $updated = $this->cartService->updateCart([[
+            'id'                 => $lineId,
+            'product_id'         => (int) $line['product_id'],
+            'category_id'        => (int) $line['category_id'],
+            'unit_price'         => (float) $line['unit_price'],
+            'vat_percentage'     => (int) $line['vat_percentage'],
+            'quantity'           => 0,
+            'override_quantity'  => true,
+        ]], $phone);
+
+        $draft = $this->summarize($updated);
+
+        $this->attach(MarvinTool::RemoveFromOrder->value, ['draft' => $draft]);
 
         return [
             'ok'    => true,
-            'total' => $result['total'],
-            'draft' => $result['draft'],
+            'total' => $updated['total'],
+            'draft' => $draft,
+        ];
+    }
+
+    /**
+     * No web-side checkout data comes out of a WhatsApp conversation — no
+     * address, no logistics choice — so this never finalizes the order. It
+     * only confirms there is something to pay for; the shopper finishes on the
+     * web, which loads this same cart by phone number. The controller sends
+     * the plain shop link, nothing appended to it.
+     */
+    private function checkoutOrder(string $phone): array
+    {
+        $order = $this->cartService->activeOrderFor($phone);
+
+        if ($order === null) {
+            return ['ok' => false, 'reason' => 'empty_basket'];
+        }
+
+        $full = $this->cartService->withItemsAndTotal((int) $order['id'], [], false);
+
+        if ($full['items'] === []) {
+            return ['ok' => false, 'reason' => 'empty_basket'];
+        }
+
+        $draft = $this->summarize($full);
+
+        $this->attach(MarvinTool::CheckoutOrder->value, ['draft' => $draft]);
+
+        return [
+            'ok'    => true,
+            'total' => $full['total'],
+            'draft' => $draft,
+        ];
+    }
+
+    /** A line in the cart's items, or null if this phone has no such line. */
+    private function findLine(int $orderId, int $lineId): ?array
+    {
+        $order = $this->cartService->withItemsAndTotal($orderId, [], false);
+
+        foreach ($order['items'] as $line) {
+            if ((int) ($line['id'] ?? 0) === $lineId) {
+                return $line;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * What Marvin sees of the basket: top-level lines with their configs
+     * folded into an "options" list, so he can read it back and remove a line
+     * by id — not the raw rows, which are cost without signal for writing a
+     * sentence.
+     */
+    private function summarize(array $order): array
+    {
+        $items = is_array($order['items'] ?? null) ? $order['items'] : [];
+
+        $configsByHost = [];
+        foreach ($items as $line) {
+            $parentId = (int) ($line['parent_id'] ?? 0);
+            if ($parentId !== 0) {
+                $configsByHost[$parentId][] = $line;
+            }
+        }
+
+        $lines = [];
+        foreach ($items as $line) {
+            if ((int) ($line['parent_id'] ?? 0) !== 0) {
+                continue; // a config, folded into its host below
+            }
+
+            $configs = $configsByHost[(int) $line['id']] ?? [];
+
+            $total = (float) $line['unit_price'] * (float) $line['quantity'];
+            foreach ($configs as $config) {
+                $total += (float) $config['unit_price'] * (float) $config['quantity'];
+            }
+
+            $lines[] = [
+                'line_id'  => (int) $line['id'],
+                'name'     => (string) $line['item_description'],
+                'quantity' => (int) $line['quantity'],
+                'options'  => array_map(
+                    static fn(array $c): string => (string) $c['item_description'],
+                    $configs,
+                ),
+                'total'    => round($total, 2),
+            ];
+        }
+
+        return [
+            'items' => $lines,
+            'count' => count($lines),
+            'total' => (float) ($order['total'] ?? 0),
         ];
     }
 

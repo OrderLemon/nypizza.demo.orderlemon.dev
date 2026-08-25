@@ -57,6 +57,8 @@ final class Marvin
 
     private array $shopInfo = [];
 
+    private string $clientName = "";
+
     private const STALE = [
         MarvinTool::GetUsualForUser->value => '[Told them their usual. Details omitted — look it up again if asked.]',
         MarvinTool::TrackOrder->value           => '[Reported delivery status. Details omitted — look it up again if asked.]',
@@ -103,9 +105,11 @@ final class Marvin
      * @param string|null $phone from the gateway envelope. Pass it explicitly:
      *                    it is the only identity the tools can trust.
      */
-    public function reply(array $conversation, array $shopInfo, ?string $phone = null): array
+    public function reply(array $conversation, array $shopInfo, ?string $clientName = "", ?string $phone = null): array
     {
         $this->shopInfo = $shopInfo;
+
+        $this->clientName = $clientName ?? "";
 
         $this->tools->reset();
 
@@ -290,11 +294,13 @@ final class Marvin
         $address .= isset($this->shopInfo["city"]) ? $this->shopInfo["city"] . ", " : " ";
         $address .= $this->shopInfo["street"] ?? " ";
 
-        $this->systemText = str_replace('{{SHOP_NAME}}', strtoupper($this->shopInfo["name"]), $template);
+        $this->systemText = str_replace('{{CLIENT_NAME}}', ucwords($this->clientName), $template);
 
-        $this->systemText = str_replace('{{SHOP_ADDRESS}}', strtoupper($address), $template);
+        $this->systemText = str_replace('{{SHOP_NAME}}', strtoupper($this->shopInfo["name"]), $this->systemText);
 
-        $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $template);
+        $this->systemText = str_replace('{{SHOP_ADDRESS}}', strtoupper($address), $this->systemText);
+
+        $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $this->systemText);
 
         return $this->systemText;
     }
