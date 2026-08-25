@@ -353,7 +353,9 @@ final class WhatsappController
  
     private function welcomeCTA(): array
     {
-        $greeting = "Hi, Welcome to New York Pizza!";
+        $shopName = ucwords($this->shop["name"]);
+
+        $greeting = "Hi, Welcome " . $shopName;
 
         try {
             $this->gateway->sendLink(

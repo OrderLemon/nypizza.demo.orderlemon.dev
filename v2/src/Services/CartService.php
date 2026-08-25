@@ -36,8 +36,7 @@ final class CartService
         private readonly Logger $logger,
         private readonly ClientService $clients,
         private readonly ConversationService $conversations,
-    ) {
-    }
+    ) {}
 
     public function newOrder(string $phoneNumber): array
     {
@@ -382,6 +381,7 @@ final class CartService
             $checkoutData = array_diff_key($checkoutData, array_flip(self::ADDRESS_FIELDS));
         }
 
+        //update client delivery address
         $this->clients->upsertFromCheckout($phone, $checkoutData);
 
         $orderId = (int) $order['id'];
