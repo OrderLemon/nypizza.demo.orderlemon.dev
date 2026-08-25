@@ -56,6 +56,7 @@ use Pmsrapi\V2\Services\MenuService;
 use Pmsrapi\V2\Services\DraftOrderService;
 use Pmsrapi\V2\Services\CartService;
 use Pmsrapi\V2\Services\ShopService;
+use Pmsrapi\V2\Services\ChatTranscriptService;
 
 define('V2_BASE', __DIR__);
 
@@ -249,6 +250,9 @@ $container->singleton(CartService::class, static fn(Container $c): CartService =
 $container->singleton(UsualOrderService::class, static fn(Container $c): UsualOrderService => new UsualOrderService(
     $c->get(Repository::class),
     $c->get(Logger::class)
+));
+$container->singleton(ChatTranscriptService::class, static fn(Container $c): ChatTranscriptService => new ChatTranscriptService(
+    $c->get(Config::class),
 ));
 $container->singleton(MenuService::class, fn($c) => new MenuService(
     $c->get(Config::class), $c->get(Logger::class),

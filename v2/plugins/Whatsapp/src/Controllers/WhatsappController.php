@@ -14,6 +14,7 @@ use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Http\Request;
 use Pmsrapi\V2\Services\ClientService;
 use Pmsrapi\V2\Services\ConversationService;
+use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Core\Config;
@@ -41,7 +42,6 @@ use Pmsrapi\V2\Core\Config;
  */
 final class WhatsappController
 {
-    private string $conversationJsonPath  = "";
     private string $clientPhone  = "";
     private ?string $clientName  = "";
 
@@ -58,6 +58,7 @@ final class WhatsappController
         private readonly Config $config,
         private readonly Marvin $marvin,
         private readonly ShopService $shopService,
+        private readonly ChatTranscriptService $transcripts,
     ) {}
 
     /**
@@ -106,16 +107,16 @@ final class WhatsappController
     /**
      * Ask Claude, send the answer, log it as an outbound turn.
      *
-     * The inbound message is already in the conversation file by the time we
-     * get here (reply() calls registerMessage first), so the file IS the
-     * request history. Nothing else to assemble.
+     * The inbound message is already in the conversation transcript by the
+     * time we get here (reply() logs it via $this->transcripts first), so the
+     * transcript IS the request history. Nothing else to assemble.
      *
      * @return array{sent: bool, error?: string}
      */
     private function marvinReply() : array
     {
 
-        $reply = $this->marvin->reply($this->loadConversations(), $this->shopInfo(),  $this->messagePayload["full_name"]);
+        $reply = $this->marvin->reply($this->transcripts->load($this->messagePayload["phone_number"]), $this->shopInfo(),  $this->messagePayload["full_name"]);
         
         // var_dump($reply["type"]);
         
@@ -160,7 +161,7 @@ final class WhatsappController
             // the next message and the thread loses all context. Tagged with
             // the tool that actually produced this reply, not a fixed one, so
             // Marvin::history() only ever staleifies the right kind of turn.
-            $this->registerMessage($reply["message"], 'text', 'out', $reply["type"] ?? null);
+            $this->transcripts->append($this->messagePayload["phone_number"], $reply["message"], 'out', 'text', $reply["type"] ?? null);
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -199,7 +200,7 @@ final class WhatsappController
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
-            $this->registerMessage($reply["message"], 'text', 'out', MarvinTool::GetUsualForUser->value);
+            $this->transcripts->append($this->messagePayload["phone_number"], $reply["message"], 'out', 'text', MarvinTool::GetUsualForUser->value);
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -238,7 +239,7 @@ final class WhatsappController
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
-            $this->registerMessage($reply["message"], 'text', 'out', MarvinTool::GetUsualForUser->value);
+            $this->transcripts->append($this->messagePayload["phone_number"], $reply["message"], 'out', 'text', MarvinTool::GetUsualForUser->value);
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -273,7 +274,7 @@ final class WhatsappController
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
-            $this->registerMessage($reply["message"], 'text', 'out', MarvinTool::GreetWithUsual->value);
+            $this->transcripts->append($this->messagePayload["phone_number"], $reply["message"], 'out', 'text', MarvinTool::GreetWithUsual->value);
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -303,7 +304,7 @@ final class WhatsappController
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
-            $this->registerMessage($reply["message"], 'text', 'out', MarvinTool::TrackOrder->value);
+            $this->transcripts->append($this->messagePayload["phone_number"], $reply["message"], 'out', 'text', MarvinTool::TrackOrder->value);
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -331,7 +332,7 @@ final class WhatsappController
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
-            $this->registerMessage($marvinReplyMessage, 'text', 'out');
+            $this->transcripts->append($this->messagePayload["phone_number"], $marvinReplyMessage, 'out', 'text');
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -369,7 +370,7 @@ final class WhatsappController
 
             // Record the greeting so Marvin knows the shopper was already
             // welcomed and does not greet them a second time.
-            $this->registerMessage($greeting, 'text', 'out');
+            $this->transcripts->append($this->messagePayload["phone_number"], $greeting, 'out', 'text');
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -399,7 +400,7 @@ final class WhatsappController
 
             // Record the greeting so Marvin knows the shopper was already
             // welcomed and does not greet them a second time.
-            $this->registerMessage($message, 'text', 'out');
+            $this->transcripts->append($this->messagePayload["phone_number"], $message, 'out', 'text');
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -466,8 +467,13 @@ final class WhatsappController
             "date_added" => date('Y-m-d H:i:s'),
         ]);
 
-        //register conversation messages to json
-        $this->registerMessage($this->messagePayload["message"], $this->messagePayload["message_type"]);
+        //register conversation messages to the transcript
+        $this->transcripts->append(
+            $this->messagePayload["phone_number"],
+            $this->messagePayload["message"],
+            'in',
+            $this->messagePayload["message_type"],
+        );
 
         //create/update the conversation
         $this->conversrationService->upsertConversation($this->messagePayload["phone_number"]);
@@ -550,106 +556,6 @@ final class WhatsappController
         ];
     }
 
-    private function loadConversations() : array
-    {
-        if(!defined("shop_id") || !is_numeric(shop_id)){
-            throw new ValidationException(["shop id" => "Shop Id must be a numeric a numeric value!"]);
-        }
-
-        $convDir = $this->config->secret("local_resources.conversations.path");
-
-        if($convDir === null || trim((string) $convDir) === ""){
-            throw new ApiException("Path to conversation directory is invalid!");
-        }
-   
-        $convDir = str_replace("{{shop_id}}", (string)(shop_id), $convDir);
-        
-        if(!file_exists($convDir)){
-            if(!mkdir($convDir, 0770, true)){
-                throw new ApiException("Could not create conversations directory!");
-            }
-        }
-
-        $this->conversationJsonPath = $convDir . DIRECTORY_SEPARATOR . $this->safePhone() . ".json";
-
-        if(!file_exists($this->conversationJsonPath)){
-            if(!touch($this->conversationJsonPath)){
-                throw new ApiException("Could not create conversation json!");
-            }
-        }
-
-        $cts = file_get_contents($this->conversationJsonPath);
-
-        if($cts === false || trim($cts) === ''){
-            return [];
-        }
-
-        $decoded = json_decode($cts, true);
-
-        if($decoded === null){
-            throw new ApiException("Conversation file is malformed!");
-        }
-        
-        return $decoded;
-    }
-
-    /**
-     * The sender phone as a safe filename.
-     *
-     * senderPhone comes straight off an inbound HTTP body, and it is being
-     * concatenated into a filesystem path — without this, a crafted
-     * sender_phone of "../../config/secret" writes outside the directory.
-     */
-    private function safePhone() : string
-    {
-        $safe = preg_replace('/[^0-9]/', '', $this->messagePayload["phone_number"]);
-
-        if($safe === null || $safe === ''){
-            throw new ApiException("Sender phonenumber is not a usable identifier!");
-        }
-
-        return $safe;
-    }
-
-    private function registerMessage(mixed $message, string $messageType, string $direction = "in", ?string $source_tool = null) : bool|int
-    {
-        $conversation = $this->loadConversations();
-
-        // A file that exists but has no data.messages yet (or got truncated)
-        // would make count() throw on PHP 8, taking the whole request with it.
-        if(!isset($conversation["data"]["messages"]) || !is_array($conversation["data"]["messages"])){
-            $conversation = ["phone" => $this->messagePayload["phone_number"], "data" => ["total" => 0, "messages" => []]];
-        }
-
-        $totalMessages = count($conversation["data"]["messages"]);
-
-        $message = [ "id" => $totalMessages + 1,
-            "direction" => $direction,
-            "message" => $message,
-            "message_type" => $messageType,
-            "at" => date('c'),
-        ];
-
-           
-        if( $direction === "out" && $source_tool !== null){
-            $message["source_tool"] = $source_tool;
-        }
-
-        $conversation["data"]["messages"][] = $message;
-
-        $conversation["data"]["total"] = $totalMessages + 1;
-
-        $cts = json_encode($conversation, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-        return file_put_contents($this->conversationJsonPath, $cts, LOCK_EX);
-    }
-
-    private function initClientConversation() : bool|int
-    {
-        $data = ["phone" => $this->messagePayload["phone_number"], "data" => ["total" => 0, "messages" =>[]]];
-
-        return file_put_contents($this->conversationJsonPath, json_encode($data), LOCK_EX);
-    }
 
     /**
      * Pull the gateway conversation id out of the inbound envelope, if present.

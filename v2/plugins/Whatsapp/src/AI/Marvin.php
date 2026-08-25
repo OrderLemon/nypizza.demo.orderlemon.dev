@@ -94,7 +94,7 @@ final class Marvin
      * Answer the latest message in this conversation.
      *
      * The inbound message is expected to already be the last entry in
-     * $conversation — the controller calls registerMessage() before this.
+     * $conversation — the controller logs it via ChatTranscriptService before this.
      *
      * The loop's intermediate turns are deliberately NOT written back to
      * <phone>.json. That log is the shopper-visible transcript, and a persisted
@@ -437,6 +437,11 @@ final class Marvin
      *
      * Rules the API enforces: the history cannot be empty and cannot open on an
      * assistant turn. It also must not END on one, or Marvin answers himself.
+     * It also requires roles to strictly alternate — two log entries can land
+     * back to back with the same direction (a fact appended outside the normal
+     * reply flow, e.g. a web checkout completing, logged right after Marvin's
+     * own last "out" turn), so those are folded into one turn rather than sent
+     * as two of the same role.
      * Non-text messages (images, audio) have no body in the gateway envelope,
      * so they are dropped rather than sent as blanks.
      *
@@ -473,8 +478,16 @@ final class Marvin
                 $text = self::STALE[$tool] ?? $text;
             }
 
+            $role = ($entry['direction'] ?? 'in') === 'out' ? 'assistant' : 'user';
+
+            $last = $out === [] ? null : array_key_last($out);
+            if ($last !== null && $out[$last]['role'] === $role) {
+                $out[$last]['content'] .= "\n\n" . $text;
+                continue;
+            }
+
             $out[] = [
-                'role'    => ($entry['direction'] ?? 'in') === 'out' ? 'assistant' : 'user',
+                'role'    => $role,
                 'content' => $text,
             ];
         }
