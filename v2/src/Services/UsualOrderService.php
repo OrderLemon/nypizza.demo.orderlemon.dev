@@ -354,7 +354,7 @@ final class UsualOrderService
             throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
         }
 
-        return "orders_active_" . shop_id;
+        return "orders_archive_" . shop_id;
     }
 
     private function orderItemsTable() : string
@@ -363,7 +363,7 @@ final class UsualOrderService
             throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
         }
 
-        return "order_items_active_" . shop_id;
+        return "order_items_archive_" . shop_id;
     }
 
 }
