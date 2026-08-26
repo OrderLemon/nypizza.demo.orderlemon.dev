@@ -28,6 +28,7 @@ final class OrderQueryService
         private readonly Repository $repo,
         private readonly Logger $logger,
         private readonly Config $config,
+        private readonly ShopService $shopService,
     ) {
     }
 
@@ -144,10 +145,13 @@ final class OrderQueryService
     /** Builds the receipt data structure (locales, company/shop info, order info) used to render a ticket. */
     public function addReceiptData(array $order): array
     {
-        $company = $this->config->secret('company.name');
-        $companyAddress = $this->config->secret('company.address');
-        $shop = $this->config->secret('company.shop.name');
-        $shopAddress = $this->config->secret('company.shop.address');
+        $shop = $this->shopService->current();
+
+        if ($shop === null) {
+            throw new ApiException('Shop not found for receipt data.');
+        }
+
+        $company = $this->repo->selectRow('companies', ['id' => (int) $shop['company_id']]);
 
         return [
             'locales' => [
@@ -162,19 +166,34 @@ final class OrderQueryService
                 'thank_you'          => 'Thank you and see you soon!',
             ],
             'company_info' => [
-                'name'               => $company,
-                'address_formatted'  => $companyAddress,
+                'name'               => $company['name'] ?? '',
+                'address_formatted'  => $this->formatAddress($company),
                 'vat_number'         => 'AAABBBCCC111222',
             ],
             'shop_info' => [
-                'name'              => $shop,
-                'address_formatted' => $shopAddress,
+                'name'              => $shop['name'] ?? '',
+                'address_formatted' => $this->formatAddress($shop),
             ],
             'order_info' => [
                 'ordered_time' => $order['ordered_time'],
                 'order_items'  => $this->ticketItems($order['items'] ?? []),
             ],
         ];
+    }
+
+    /** Builds "street, zip city, country" from a shops/companies row, skipping blank parts. */
+    private function formatAddress(?array $row): string
+    {
+        if ($row === null) {
+            return '';
+        }
+
+        $parts = array_filter(
+            [$row['street'] ?? null, $row['zip'] ?? null, $row['city'] ?? null, $row['country'] ?? null],
+            static fn(?string $part): bool => $part !== null && trim($part) !== '',
+        );
+
+        return implode(', ', $parts);
     }
 
     private function ticketItems(array $items): array
