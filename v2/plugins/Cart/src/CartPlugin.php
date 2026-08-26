@@ -12,6 +12,7 @@ use Pmsrapi\V2\Plugin\PluginRouter;
 use Pmsrapi\V2\Plugin\PluginRegistrar;
 use Pmsrapi\V2\Services\CartService;
 use Plugins\Cart\Controllers\CartController;
+use Pmsrapi\V2\Services\CartSyncService;
 use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
@@ -25,6 +26,7 @@ final class CartPlugin extends AbstractPlugin
     {
         $registrar->singleton(CartController::class, static fn(Container $c): CartController => new CartController(
             $c->get(CartService::class),
+            $c->get(CartSyncService::class),
             $c->get(WhatsappGateway::class),
             $c->get(OrderQueryService::class),
             $c->get(Config::class),
@@ -36,7 +38,10 @@ final class CartPlugin extends AbstractPlugin
     public function routes(PluginRouter $router, Container $container): void
     {
         $router->put('/{shop_id}/update', ShopContext::wrap(fn(Request $r): Response
-            => $container->get(CartController::class)->update($r)));
+            => $container->get(CartController::class)->sync($r)));
+
+        // $router->put('/{shop_id}/update', ShopContext::wrap(fn(Request $r): Response
+        //     => $container->get(CartController::class)->update($r)));
 
         $router->post('/{shop_id}/checkout', ShopContext::wrap(fn(Request $r): Response
             => $container->get(CartController::class)->checkout($r)));
