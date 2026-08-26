@@ -11,6 +11,7 @@ use Pmsrapi\V2\Services\CartService;
 use Pmsrapi\V2\Services\CartSyncService;
 use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\ChatTranscriptService;
+use Pmsrapi\V2\Services\PrintService;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
@@ -30,6 +31,7 @@ final class CartController
         private readonly Config $config,
         private readonly Logger $logger,
         private readonly ChatTranscriptService $transcripts,
+        private readonly PrintService $printService,
     ){}
 
     public function update(Request $request): Response
@@ -105,6 +107,8 @@ final class CartController
         $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
 
         $this->sendThankYouMessage($body["phonenumber"]);
+
+        $this->printService->sendRequest($order["id"]);
 
         return Response::Ok(
             [
@@ -212,6 +216,7 @@ final class CartController
             return false;
         }
     }
+
 
     private function sendThankYouMessage(string $phone, ?string $conversationId = null) : bool
     {

@@ -72,7 +72,18 @@ class ClientService
      */
     public function upsertFromCheckout(string $phone, array $details): ?array
     {
-        $result = $this->repo->upsert($this->clientsTable(), [...$details, 'phonenumber' => $phone]);
+        $address = [
+            "country" => $details["country"],
+            "state" => $details["state"],
+            "street" => $details["street"],
+            "city" => $details["city"],
+            "box" => $details["box"],
+        ];
+
+        $result = $this->repo->upsert(
+            $this->clientsTable(),
+            [...$address, 'phonenumber' => $phone],
+            ["street","city","country","box","state"]);
 
         return $result['record'];
     }
