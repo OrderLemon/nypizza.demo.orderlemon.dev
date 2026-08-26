@@ -401,6 +401,10 @@ final class CartService
             $checkoutData = array_diff_key($checkoutData, array_flip(self::ADDRESS_FIELDS));
         }
 
+        if(isset($checkoutData["country"])){
+            $checkoutData["country"] = strtoupper(substr($checkoutData["country"],0,2));
+        }
+
         //update client delivery address
         $this->clients->upsertFromCheckout($phone, $checkoutData);
 
