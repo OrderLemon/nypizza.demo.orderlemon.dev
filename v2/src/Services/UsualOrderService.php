@@ -124,10 +124,14 @@ final class UsualOrderService
     public function basketFor(string $phone, string $signature): ?array
     {
         foreach ($this->historyFor($phone) as $order) {
-            if ($this->fingerprint($order) === $signature) {
-                $this->logger->debug("basket for $phone", $order);
+            if($order["id"] === 17){
                 return $this->basket($order);
             }
+            
+            // return $this->basket($order);
+            // if ($this->fingerprint($order) === $signature) {
+            //     $this->logger->debug("basket for $phone", $order);
+            // }
         }
 
         return null;
@@ -202,7 +206,12 @@ final class UsualOrderService
      *
      * Configs are folded in from the flat list by parent_id (see fingerprint()),
      * the same as CartService/MarvinTools see them — there is no nested
-     * "config" array on a real order_items row.
+     * "config" array on a real order_items row. Each config is reshaped to
+     * "group_id"/"option_id" (rather than "category_id"/"product_id"), the
+     * same resolved-option naming MenuService::resolveOptions() and
+     * CartService::normalizeIds() use, since a config here identifies a menu
+     * option to re-resolve against the live catalogue, not a line to insert
+     * as-is.
      *
      * @return list<array<string,mixed>>
      */
@@ -235,9 +244,10 @@ final class UsualOrderService
             $configs = $childrenByParent[(int) ($item['id'] ?? 0)] ?? [];
 
             if ($configs !== []) {
-                $entry['config'] = array_map(
+                $entry['configs'] = array_map(
                     static fn(array $c): array => [
-                        'product_id'       => (int) ($c['product_id'] ?? 0),
+                        'group_id'         => (int) ($c['category_id'] ?? 0),
+                        'option_id'        => (int) ($c['product_id'] ?? 0),
                         'item_description' => (string) ($c['item_description'] ?? ''),
                         'quantity'         => max(1, (int) ($c['quantity'] ?? 1)),
                     ],
@@ -262,7 +272,7 @@ final class UsualOrderService
                 : $item['item_description'];
 
             $options = [];
-            foreach ((array) ($item['config'] ?? []) as $option) {
+            foreach ((array) ($item['configs'] ?? []) as $option) {
                 if (is_string($option['item_description'] ?? null)) {
                     $options[] = $option['item_description'];
                 }

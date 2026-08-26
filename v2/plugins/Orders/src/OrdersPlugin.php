@@ -62,7 +62,7 @@ final class OrdersPlugin extends AbstractPlugin
             => $container->get(OrderController::class)->store($r)));
 
         $router->post('/{shop_id}/reorder', ShopContext::wrap(fn(Request $r, array $p): Response
-            => $container->get(OrderController::class)->decodeOrder($r)));
+            => $container->get(OrderController::class)->reorder($r)));
 
         $router->post('/{shop_id}/reference', ShopContext::wrap(fn(Request $r, array $p): Response
             => $container->get(OrderController::class)->referenceOrder($r)));
