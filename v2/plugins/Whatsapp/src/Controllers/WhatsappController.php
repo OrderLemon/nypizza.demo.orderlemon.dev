@@ -152,7 +152,7 @@ final class WhatsappController
                 $this->messagePayload["phone_number"],
                 $reply["message"],
                 "OPEN",
-                $this->shopLink(),
+                $this->shopLinkWithCheckout(),
                 "To get your menu always click here",
                 null,
                 $this->messagePayload["conversation_id"]);
@@ -445,6 +445,11 @@ final class WhatsappController
     private function shopLinkWithUsualOrder(string $orderHash) : string
     {
         return $this->shopLink() . "&order=" . urlencode($orderHash);
+    }
+
+    private function shopLinkWithCheckout() : string
+    {
+        return $this->shopLink() . "&checkout=true";
     }
 
     private function shopLink() : string

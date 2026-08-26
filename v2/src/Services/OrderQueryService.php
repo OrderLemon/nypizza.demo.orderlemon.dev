@@ -179,24 +179,37 @@ final class OrderQueryService
 
     private function ticketItems(array $items): array
     {
+        $rows = array_values(array_filter($items, 'is_array'));
+
+        $childrenByParent = [];
+        foreach ($rows as $row) {
+            $parentId = (int) ($row['parent_id'] ?? 0);
+            if ($parentId !== 0) {
+                $childrenByParent[$parentId][] = $row;
+            }
+        }
+
         $result = [];
 
-        foreach ($items as $item) {
-            $ticketItem = [
+        foreach ($rows as $item) {
+            if ((int) ($item['parent_id'] ?? 0) !== 0) {
+                continue;   // a config, folded into its host below
+            }
+
+            $configs = $childrenByParent[(int) ($item['id'] ?? 0)] ?? [];
+
+            $result[] = [
                 'id'                => $item['id'],
                 'item_description'  => $item['item_description'],
                 'unit_price'        => $item['unit_price'],
                 'vat_percentage'    => $item['vat_percentage'],
                 'quantity'          => $item['quantity'],
                 'product_id'        => $item['product_id'],
-                'config'            => $item['config'] ?? [],
+                'config'            => $configs,
             ];
 
-            $result[] = $ticketItem;
-
-            foreach ($ticketItem['config'] as $configIndex => $configItem) {
-                $ticketItem['config'][$configIndex]['parent_id'] = $item['id'];
-                $result[] = $ticketItem['config'][$configIndex];
+            foreach ($configs as $configItem) {
+                $result[] = $configItem;
             }
         }
 

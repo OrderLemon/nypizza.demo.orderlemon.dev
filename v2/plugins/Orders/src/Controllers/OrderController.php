@@ -96,7 +96,7 @@ final class OrderController
         ]);
     }
 
-    public function decodeOrder(Request $request) : Response
+    public function reorder(Request $request) : Response
     {
         $phone = trim((string) $request->body["phone"] ?? "");
  
