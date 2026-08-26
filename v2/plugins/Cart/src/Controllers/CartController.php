@@ -8,6 +8,7 @@ use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Http\Request;
 use Pmsrapi\V2\Services\CartService;
+use Pmsrapi\V2\Services\CartSyncService;
 use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Core\Config;
@@ -23,6 +24,7 @@ final class CartController
 {
     function __construct(
         private readonly CartService $cartService,
+        private readonly CartSyncService $cartSyncService,
         private readonly WhatsappGateway $whatsappGateway,
         private readonly OrderQueryService $queryService,
         private readonly Config $config,
@@ -43,6 +45,23 @@ final class CartController
         }
 
         $result = $this->cartService->updateCart($body["items"], $body["phonenumber"]);
+
+        return Response::ok($result);
+    }
+
+    public function sync(Request $request): Response
+    {
+        $body = $request->body;
+
+        if(!isset($body["phonenumber"])){
+            throw new ValidationException(["phone" => "Missing phone parameter!"]);
+        }
+
+        if(!isset($body["items"]) || !is_array($body["items"])){
+            throw new ValidationException(["items" => "Missing or invalid items!"]);
+        }
+
+        $result = $this->cartSyncService->replaceCart($body["items"], $body["phonenumber"]);
 
         return Response::ok($result);
     }

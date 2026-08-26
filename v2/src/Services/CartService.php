@@ -146,6 +146,7 @@ final class CartService
      */
     private function applyItem(?int &$orderId, array $item, string $phoneNumber): array
     {
+        $item = $this->normalizeIds($item);
         $this->validateItem($item);
 
         $existingLine = $this->findMatchingLine($orderId, $item);
@@ -340,10 +341,29 @@ final class CartService
         return $order;
     }
 
+    /**
+     * A config may arrive shaped as a resolved option ("option_id"/"group_id")
+     * rather than a cart item ("product_id"/"category_id"). Normalize it
+     * before anything downstream — validation, line matching, the
+     * insert/update columns — reads product_id/category_id.
+     */
+    private function normalizeIds(array $item): array
+    {
+        if (!isset($item["product_id"]) && isset($item["option_id"])) {
+            $item["product_id"] = $item["option_id"];
+        }
+
+        if (!isset($item["category_id"]) && isset($item["group_id"])) {
+            $item["category_id"] = $item["group_id"];
+        }
+
+        return $item;
+    }
+
     private function validateItem(array $item): void
     {
         $required = ['product_id', 'category_id', 'unit_price', 'vat_percentage', 'quantity'];
-        
+
         foreach ($required as $field) {
             if (!isset($item[$field])) {
                 throw new ValidationException([$field => "Field \"{$field}\" is required for a cart item"]);
@@ -352,7 +372,7 @@ final class CartService
 
         //when updating existing items decription is not required
         if( !isset($item["id"]) && !isset($item["item_description"])){
-            throw new ValidationException([$field => "Field \"item_description\" is required for a cart item"]);
+            throw new ValidationException(['item_description' => "Field \"item_description\" is required for a cart item"]);
         }
     }
 
