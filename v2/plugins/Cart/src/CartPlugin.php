@@ -18,6 +18,7 @@ use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Services\PrintService;
+use Pmsrapi\V2\Services\ShopService;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
 use Plugins\Support\ShopContext;
 
@@ -34,6 +35,7 @@ final class CartPlugin extends AbstractPlugin
             $c->get(Logger::class),
             $c->get(ChatTranscriptService::class),
             $c->get(PrintService::class),
+            $c->get(ShopService::class),
         ));
     }
 

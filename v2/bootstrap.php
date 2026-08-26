@@ -202,6 +202,7 @@ $container->singleton(OrderQueryService::class, static fn(Container $c): OrderQu
     $c->get(Repository::class),
     $c->get(Logger::class),
     $c->get(Config::class),
+    $c->get(ShopService::class),
 ));
 
 $container->singleton(ConfigService::class, static fn(Container $c): ConfigService => new ConfigService(

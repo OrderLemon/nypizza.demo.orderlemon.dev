@@ -12,6 +12,7 @@ use Pmsrapi\V2\Services\CartSyncService;
 use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Services\PrintService;
+use Pmsrapi\V2\Services\ShopService;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
@@ -32,6 +33,7 @@ final class CartController
         private readonly Logger $logger,
         private readonly ChatTranscriptService $transcripts,
         private readonly PrintService $printService,
+        private readonly ShopService $shopService,
     ){}
 
     public function update(Request $request): Response
@@ -224,7 +226,7 @@ final class CartController
         {
             $this->whatsappGateway->sendButtons(
                 $phone,
-                "Thank you for ordering in Dominos Pizza Amsterdam!",
+                "Thank you for ordering at {$this->shopService->name()}!",
                 $this->trackOrderButton(),
                 $conversationId);
             
