@@ -572,9 +572,24 @@ final class WhatsappController
         return is_numeric($id) ? (int) $id : null;
     }
 
-    public function health(Request $request) : Response
+    /*
+    *   Currently uses shop number because the prompt requires shop information to be built.
+    */
+    public function health(Request $request, string $shopPhone) : Response
     {
-        $checkResults = $this->marvin->selfCheck();
+        if(trim($shopPhone) === ""){
+            throw new ValidationException(["shop phone" => "shop phone is required!"]);
+        }
+
+        $this->messagePayload["shop_phone_number"] = $shopPhone;
+
+        $this->findShop();
+
+        if($this->shop === null || $this->shop === []){
+            Response::error(404,["shop" => "No shop found!"]);
+        }
+
+        $checkResults = $this->marvin->selfCheck($this->shop);
 
         return Response::ok(["data" => $checkResults]);
     }
