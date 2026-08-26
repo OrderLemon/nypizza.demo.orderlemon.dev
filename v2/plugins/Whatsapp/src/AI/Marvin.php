@@ -522,10 +522,13 @@ final class Marvin
      *               tools?: int, tokens?: int, cacheable?: bool, prompt_path?: string,
      *               config_path?: string, error?: string}
      */
-    public function selfCheck(): array
+    public function selfCheck(array $shopData): array
     {
         try {
+            $this->shopInfo = $shopData;
+            
             $text   = $this->systemText();
+
             $text  .= json_encode(
                 $this->tools->definitions(),
                 JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
@@ -540,7 +543,6 @@ final class Marvin
                     'model'   => $this->client->model(),
                 ]);
             }
-
             return [
                 'ok'          => true,
                 'version'     => $this->promptVersion(),

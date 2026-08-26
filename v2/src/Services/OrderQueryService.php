@@ -214,7 +214,7 @@ final class OrderQueryService
             ? 'https' : 'http';
 
         $ticketUri = $protocol . '://' . $host . '/' . ltrim($templatePath, '/');
-        $query = http_build_query(['order_id' => $id, 'token' => $token]);
+        $query = http_build_query(['shop_id' => shop_id, 'order_id' => $id, 'token' => $token]);
 
         return $ticketUri . '?' . $query;
     }
