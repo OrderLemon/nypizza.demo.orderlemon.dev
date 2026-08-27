@@ -600,6 +600,7 @@ final class MarvinTools
 
         $orders = $this->orderService->activeOrdersFor($phone);
 
+        
         if ($orders === []) {
             return ['found' => 0];
         }
@@ -640,7 +641,7 @@ final class MarvinTools
 
         $order = $chosen ?? $orders[0];
 
-        $view  = $this->tracking_service->resolve((int) ($order['id'] ?? 0));
+        $view  = $this->tracking_service->resolve($order);
 
         if ($view === null) {
             $this->logger->warning('marvin.track_order: no tracking data found for this order. ', [
