@@ -20,7 +20,12 @@ final class PrintService
     /** Asks the print microservice to print the given order's ticket. */
     public function sendRequest(int $orderId): bool
     {
-        return true;
+        $enabled = $this->config->secret("receipt.printing_enabled", false);
+
+        if(!$enabled){
+            return true;
+        }
+
         $url = rtrim((string) $this->config->secret('receipt.print_service_api'), '/') . '/';
         $token = (string) $this->config->secret('receipt.print_service_token');
 

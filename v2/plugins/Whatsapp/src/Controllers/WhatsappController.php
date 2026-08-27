@@ -356,7 +356,7 @@ final class WhatsappController
     {
         $shopName = ucwords($this->shop["name"]);
 
-        $greeting = "Hi, Welcome " . $shopName;
+        $greeting = "Hi, Welcome to " . $shopName;
 
         try {
             $this->gateway->sendLink(

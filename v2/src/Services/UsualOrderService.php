@@ -37,7 +37,7 @@ final class UsualOrderService
     public const MOCKUP = 'orders';
 
     /** How many recent orders to consider. */
-    private const WINDOW = 10;
+    private const WINDOW = 5;
 
     /** Minimum repeats before a basket earns the phrase "the usual". */
     private const USUAL_THRESHOLD = 2;
@@ -124,14 +124,10 @@ final class UsualOrderService
     public function basketFor(string $phone, string $signature): ?array
     {
         foreach ($this->historyFor($phone) as $order) {
-            if($order["id"] === 17){
+            if ($this->fingerprint($order) === $signature) {
+                $this->logger->debug("basket for $phone", $order);
                 return $this->basket($order);
             }
-            
-            // return $this->basket($order);
-            // if ($this->fingerprint($order) === $signature) {
-            //     $this->logger->debug("basket for $phone", $order);
-            // }
         }
 
         return null;
