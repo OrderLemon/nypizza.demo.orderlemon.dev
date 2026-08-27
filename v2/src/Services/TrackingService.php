@@ -147,17 +147,15 @@ final class TrackingService extends JsonService
      * for the mockup orders that predate the tracking file, and for any order
      * created through a path that bypasses the seeding hook.
      */
-    public function resolve(int $orderId): ?array
+    public function resolve(array $order): ?array
     {
         if (!$this->enabled()) {
             return null;
         }
 
-        $order  = $this->findOrder($orderId);
         $stored = OrderStatus::fromMixed($order['status'] ?? null);
 
-        $plan = $this->findPlan($orderId);
-
+        $plan = $this->findPlan($order["id"]);
         if ($plan === null) {
             if ($order === null) {
                 return null;
@@ -262,11 +260,11 @@ final class TrackingService extends JsonService
             $progress  = 1.0;
             $remaining = 0;
         } elseif ($elapsed < $prep) {
-            $status    = OrderStatus::Preparing;
+            $status    = OrderStatus::Ordered;
             $progress  = 0.0;
             $remaining = (int) round($total - $elapsed);
         } elseif ($elapsed < $total) {
-            $status    = OrderStatus::OutForDelivery;
+            $status    = OrderStatus::Shipped;
             $progress  = ($elapsed - $prep) / $travel;
             $remaining = (int) round($total - $elapsed);
         } else {
@@ -283,7 +281,6 @@ final class TrackingService extends JsonService
         // marker even when time_scale compresses the demo.
         $etaAt = time() + (int) round($remaining / $scale);
 
-        $this->updateOrderStatus((int) $plan['order_id'], $status);
 
         $view = [
             'order_id'     => (int) $plan['order_id'],
@@ -410,7 +407,7 @@ final class TrackingService extends JsonService
         return match ($status) {
             OrderStatus::Cancelled => 'This order was cancelled. Let me know if you would like to order again.',
             OrderStatus::Delivered => 'Your order has been delivered — enjoy your pizza! 🍕',
-            OrderStatus::OutForDelivery => sprintf(
+            OrderStatus::Shipped => sprintf(
                 '%s is %d minutes away from your location — arriving around %s by %s.',
                 $view['courier']['name'],
                 $view['eta_minutes'],

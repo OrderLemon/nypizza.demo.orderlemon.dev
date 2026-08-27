@@ -13,10 +13,9 @@ namespace Pmsrapi\V2\Orders;
  */
 enum OrderStatus: string
 {
-    case Ordered        = 'pending';
-    case Confirmed      = 'confirmed';
-    case Preparing      = 'preparing';
-    case OutForDelivery = 'out_for_delivery';
+    case Ordered        = 'ordered';
+    case Done        = 'done';
+    case Shipped = 'shipped';
     case Delivered      = 'delivered';
     case Cancelled      = 'cancelled';
 
@@ -28,9 +27,7 @@ enum OrderStatus: string
     {
         return match ($this) {
             self::Ordered        => 'We have your order',
-            self::Confirmed      => 'Your order is confirmed',
-            self::Preparing      => 'Your pizza is in the oven',
-            self::OutForDelivery => $courier !== null
+            self::Shipped => $courier !== null
                 ? "{$courier} is on the way with your order"
                 : 'Your order is on the way',
             self::Delivered      => 'Delivered — enjoy!',
@@ -41,19 +38,19 @@ enum OrderStatus: string
     /** Nothing will change from here on: stop polling, stop animating. */
     public function isTerminal(): bool
     {
-        return $this === self::Delivered || $this === self::Cancelled;
+        return $this === self::Delivered || $this === self::Cancelled || $this == self::Done;
     }
 
     /** Whether a courier position/ETA is meaningful for this status. */
     public function isTrackable(): bool
     {
-        return $this !== self::Cancelled && $this !== self::Delivered;
+        return $this !== self::Cancelled && $this !== self::Delivered && $this !== self::Done;
     }
 
     /** Whether the courier has left the store. */
     public function isEnRoute(): bool
     {
-        return $this === self::OutForDelivery;
+        return $this === self::Shipped;
     }
 
     /** Tolerant parse for mockup data: unknown/absent values fall back to Ordered. */
