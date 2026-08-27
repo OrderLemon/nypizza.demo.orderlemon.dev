@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pmsrapi\V2\Services;
 
+use Pmsrapi\V2\Cache\RedisLock;
 use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\ValidationException;
@@ -18,6 +19,7 @@ final class CartSyncService
     public function __construct(
         private readonly Repository $repo,
         private readonly CartService $cart,
+        private readonly RedisLock $lock,
     ) {}
 
     /**
@@ -27,31 +29,45 @@ final class CartSyncService
      *        configs[] — minus ids.
      * @return array<string, mixed> the synced cart, items attached
      */
-    public function replaceCart(array $items, string $phoneNumber): array
+    public function replaceCart(array $items, string $phoneNumber): ?array
     {
-        $order = $this->cart->activeOrderFor($phoneNumber);
+        // Keyed by phone rather than order id: no cart may exist yet at this
+        // point, and phone is what actually identifies "the same cart" to a
+        // second, concurrent sync call.
+        $lockKey = "cart:sync:{$phoneNumber}";
 
-        if ($order === null) {
-            if ($items === []) {
-                return ['phonenumber' => $phoneNumber, 'items' => [], 'total' => 0.0];
-            }
-
-            $order = $this->cart->newOrder($phoneNumber);
+        if (!$this->lock->acquire($lockKey, ttlSeconds: 5, timeoutMs: 2000)) {
+            // only after genuinely waiting ~2s and still can't get in — now it's a real problem
+            return null;
         }
 
-        $orderId = (int) $order['id'];
+        try {
+            $order = $this->cart->activeOrderFor($phoneNumber);
 
-        $this->wipeLines($orderId);
+            if ($order === null) {
+                if ($items === []) {
+                    return ['phonenumber' => $phoneNumber, 'items' => [], 'total' => 0.0];
+                }
 
-        foreach ($items as $item) {
-            if (!is_array($item)) {
-                throw new ValidationException(['items' => 'Each cart item must be an object']);
+                $order = $this->cart->newOrder($phoneNumber);
             }
 
-            $this->insertLine($orderId, $item, null);
-        }
+            $orderId = (int) $order['id'];
 
-        return $this->cart->withItemsAndTotal($orderId, [], false);
+            $this->wipeLines($orderId);
+
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    throw new ValidationException(['items' => 'Each cart item must be an object']);
+                }
+
+                $this->insertLine($orderId, $item, null);
+            }
+
+            return $this->cart->withItemsAndTotal($orderId, [], false);
+        } finally {
+            $this->lock->release($lockKey);
+        }
     }
 
     private function wipeLines(int $orderId): void
