@@ -15,6 +15,7 @@ use Pmsrapi\V2\Http\Request;
 use Pmsrapi\V2\Services\ClientService;
 use Pmsrapi\V2\Services\ConversationService;
 use Pmsrapi\V2\Services\ChatTranscriptService;
+use Pmsrapi\V2\Services\TranscribeService;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Core\Config;
@@ -59,6 +60,7 @@ final class WhatsappController
         private readonly Marvin $marvin,
         private readonly ShopService $shopService,
         private readonly ChatTranscriptService $transcripts,
+        private readonly TranscribeService $transcribe,
     ) {}
 
     /**
@@ -387,7 +389,7 @@ final class WhatsappController
     
     private function sendText(string $message): array
     {
-        if(trim($message) === null){
+        if(trim($message) === ''){
             return ["sent" => false, "error" => "Empty message!"];
         }
 
@@ -459,20 +461,35 @@ final class WhatsappController
     }
 
     /**
-     * Send a first welcome message and continue with CTA url.
+     * Route an inbound message to the right reply path.
+     *
+     * Order of decisions:
+     *   1. audio    -> transcribe to text first (or bail out with a fallback
+     *                  reply if transcription fails), then fall through
+     *   2. location -> the shopper answering our own location request
+     *   3. new client (first message ever) -> welcome CTA + location request
+     *   4. everything else -> Marvin
+     *
      * @return array{sent: bool, error?: string}
      */
     private function reply(): array
     {
-        // add/update client
-        $upsertResult = $this->clientService->upsertClient(
-        [
+        $upsertResult = $this->clientService->upsertClient([
             "phonenumber" => $this->messagePayload["phone_number"],
             "full_name" => $this->messagePayload["full_name"],
             "date_added" => date('Y-m-d H:i:s'),
         ]);
 
-        //register conversation messages to the transcript
+        if ($this->messagePayload["message_type"] === "audio") {
+            $transcribedText = $this->transcribeInboundAudio();
+
+            if ($transcribedText === null) {
+                return $this->marvinFallbackReply();
+            }
+
+            $this->messagePayload["message"] = $transcribedText;
+        }
+
         $this->transcripts->append(
             $this->messagePayload["phone_number"],
             $this->messagePayload["message"],
@@ -480,34 +497,79 @@ final class WhatsappController
             $this->messagePayload["message_type"],
         );
 
-        //create/update the conversation
         $this->conversrationService->upsertConversation($this->messagePayload["phone_number"]);
 
-        // The shopper is answering our own location request - save it and
-        // carry on, rather than asking them for it again below.
         if ($this->messagePayload["message_type"] === "location") {
-            $result = $this->upsertClientLocation();
-
-            $message = $result === null ? 
-                "We could not retrieve your location. Please try again later!" 
-                    : "Your location has been updated!";
-
-            return $this->sendText($message);
+            return $this->handleLocationReply();
         }
 
-        //  || ($upsertResult["record"]["street"] ?? null) === null
-        if ($upsertResult["action"] === "inserted" ) {
-            $welcome = $this->welcomeCTA();
-
-            if($welcome["sent"] !== true){
-                return  ["sent" => false];
-            }
-
-            return $this->sendLocationRequest();
+        if ($upsertResult["action"] === "inserted") {
+            return $this->handleNewClientReply();
         }
 
-        // return $this->welcomeCTA();
         return $this->marvinReply();
+    }
+
+    /**
+     * Transcribe the audio attachment carried by an inbound voice message.
+     *
+     * @return string|null the transcribed text, or null if transcription failed
+     */
+    private function transcribeInboundAudio(): ?string
+    {
+        if (trim($this->messagePayload["file_attachment"]) === "") {
+            throw new ValidationException(["file attachment" => "File attachment url is missing!"]);
+        }
+
+        return $this->transcribe->transcribe($this->messagePayload["file_attachment"]);
+    }
+
+    /**
+     * The shopper is answering our own location request - save it and let
+     * them know, rather than asking them for it again.
+     *
+     * @return array{sent: bool, error?: string}
+     */
+    private function handleLocationReply(): array
+    {
+        $result = $this->upsertClientLocation();
+
+        $message = $result === null
+            ? "We could not retrieve your location. Please try again later!"
+            : "Your location has been updated!";
+
+        return $this->sendText($message);
+    }
+
+    /**
+     * First-ever message from this phone number: send the welcome CTA, then
+     * ask for their location.
+     *
+     * @return array{sent: bool, error?: string}
+     */
+    private function handleNewClientReply(): array
+    {
+        $welcome = $this->welcomeCTA();
+
+        if ($welcome["sent"] !== true) {
+            return ["sent" => false];
+        }
+
+        return $this->sendLocationRequest();
+    }
+
+    /**
+     * Sent when an inbound voice message could not be transcribed, so we
+     * never got usable text to hand to Marvin. Lets the shopper know and
+     * asks them to type instead, rather than leaving them without a reply.
+     *
+     * @return array{sent: bool, error?: string}
+     */
+    private function marvinFallbackReply(): array
+    {
+        return $this->sendText(
+            "Sorry, I couldn't understand that voice message. Could you type it instead?"
+        );
     }
 
     /**
@@ -673,6 +735,7 @@ final class WhatsappController
         $this->messagePayload["location"] = $this->extractLocation($body);
         $this->messagePayload["conversation_id"] = $this->conversationId($body);
         $this->messagePayload["shop_phone_number"] = trim((string) ($body['phonenumber'] ?? ''));
+        $this->messagePayload["file_attachment"] = trim((string) ($body['file_attachment'] ?? ''));
 
         $errors = [];
 

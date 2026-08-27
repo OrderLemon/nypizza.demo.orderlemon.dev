@@ -60,6 +60,7 @@ use Pmsrapi\V2\Services\CartSyncService;
 use Pmsrapi\V2\Services\PrintService;
 use Pmsrapi\V2\Services\ShopService;
 use Pmsrapi\V2\Services\ChatTranscriptService;
+use Pmsrapi\V2\Services\TranscribeService;
 
 define('V2_BASE', __DIR__);
 
@@ -272,6 +273,10 @@ $container->singleton(UsualOrderService::class, static fn(Container $c): UsualOr
     $c->get(Logger::class)
 ));
 $container->singleton(ChatTranscriptService::class, static fn(Container $c): ChatTranscriptService => new ChatTranscriptService(
+    $c->get(Config::class),
+));
+$container->singleton(TranscribeService::class, static fn(Container $c): TranscribeService => new TranscribeService(
+    $c->get(Logger::class),
     $c->get(Config::class),
 ));
 $container->singleton(MenuService::class, fn($c) => new MenuService(
