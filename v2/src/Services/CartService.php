@@ -416,7 +416,7 @@ final class CartService
         // smuggle its own status_id/status_label past the ones set here.
         $this->repo->updateById($this->ordersTable(), $orderId, [
             ...$orderFields,
-            'pick_up_moment' => $orderFields["pick_up_moment"] ?? $orderFields["pickup_moment"], // pickup key naming 
+            'pick_up_time' => $orderFields["pick_up_moment"] ?? $orderFields["pickup_moment"], // pickup key naming 
             'status_id'    => self::CHECKED_OUT_STATUS_ID,
             'status_label' => "ordered",
             'logistics_label' => self::LOGISTIC_LABELS[$orderFields["logistics_type"]]

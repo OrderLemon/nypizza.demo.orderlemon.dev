@@ -50,6 +50,10 @@ final class CartController
 
         $result = $this->cartService->updateCart($body["items"], $body["phonenumber"]);
 
+        if($result === null){
+            return Response::error(503, ["cart busy" => "Cart is busy! Please try again!"]);
+        }
+
         return Response::ok($result);
     }
 
@@ -67,6 +71,10 @@ final class CartController
 
         $result = $this->cartSyncService->replaceCart($body["items"], $body["phonenumber"]);
 
+        if($result === null){
+            return Response::error(503, ["cart busy" => "Cart is busy! Please try again!"]);
+        }
+        
         return Response::ok($result);
     }
 

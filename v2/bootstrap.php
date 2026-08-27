@@ -16,6 +16,7 @@ declare(strict_types=1);
 use Pmsrapi\V2\Cache\QueryCache;
 use Pmsrapi\V2\Cache\RateLimiter;
 use Pmsrapi\V2\Cache\RedisClient;
+use Pmsrapi\V2\Cache\RedisLock;
 use Pmsrapi\V2\Cluster\Capabilities;
 use Pmsrapi\V2\Cluster\HiveRegistry;
 use Pmsrapi\V2\Cluster\ServiceClient;
@@ -106,6 +107,11 @@ $container->singleton(RateLimiter::class, static fn(Container $c): RateLimiter =
     $c->get(RedisClient::class),
     $c->get(Logger::class),
     (bool) $c->get(Config::class)->secret('rate_limit.fail_open', true),
+));
+
+$container->singleton(RedisLock::class, static fn(Container $c): RedisLock => new RedisLock(
+    $c->get(RedisClient::class),
+    $c->get(Logger::class),
 ));
 
 $container->singleton(TokenStore::class, static fn(Container $c): TokenStore => new TokenStore(
@@ -253,6 +259,7 @@ $container->singleton(CartService::class, static fn(Container $c): CartService =
 $container->singleton(CartSyncService::class, static fn(Container $c): CartSyncService => new CartSyncService(
     $c->get(Repository::class),
     $c->get(CartService::class),
+    $c->get(RedisLock::class),
 ));
 
 $container->singleton(PrintService::class, static fn(Container $c): PrintService => new PrintService(
