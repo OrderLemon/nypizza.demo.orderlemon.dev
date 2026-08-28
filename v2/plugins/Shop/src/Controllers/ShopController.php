@@ -26,7 +26,7 @@ final class ShopController
             return Response::error(404, ['not found' => 'No shop with that id']);
         }
 
-        return Response::ok($this->present($shop));
+        return Response::ok(["shop" => $this->present($shop)]);
     }
 
     public function byPhone(string $phoneNumber): Response
@@ -41,7 +41,7 @@ final class ShopController
             return Response::error(404, ['not found' => 'No shop for that phone number']);
         }
 
-        return Response::ok($this->present($shop));
+        return Response::ok(["shop" => $this->present($shop)]);
     }
 
     /**
@@ -52,6 +52,7 @@ final class ShopController
     {
         return [
             'id' => $shop['id'],
+            'name' => $shop['name'],
             'company_id' => $shop['company_id'],
             'phonenumber' => $shop['phonenumber'],
             'enabled' => $shop['enabled'],

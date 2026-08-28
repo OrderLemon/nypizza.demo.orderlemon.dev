@@ -344,12 +344,11 @@ final class MarvinTools
             'unit_price'       => $this->menuService->basePrice($productId),
             'vat_percentage'   => $vat,
             'quantity'         => $quantity,
-            // Every config applies to every unit of its host, so it carries
-            // the same quantity rather than its own.
+
             'configs'          => array_map(
                 static fn(array $c): array => [
-                    'product_id'        => $c['product_id'],
-                    'category_id'       => $categoryId,
+                    'option_id'         => $c['option_id'],
+                    'group_id'          => $c['group_id'],
                     'item_description'  => $c['item_description'],
                     'unit_price'        => $c['unit_price'],
                     'vat_percentage'    => $vat,
@@ -359,7 +358,9 @@ final class MarvinTools
             ),
         ];
 
+
         $order = $this->cartService->updateCart([$item], $phone);
+        
         $draft = $this->summarize($order);
 
         $this->attach(MarvinTool::AddToOrder->value, ['draft' => $draft]);

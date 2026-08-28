@@ -142,9 +142,9 @@ final class CartController
             return Response::error(404, ["not found" => "No active cart for this phone number!"]);
         }
 
-        $fullOrder = $this->cartService->withItemsAndTotal($order["id"], [], false);
+        $fullOrder = $this->cartService->withItemsAndTotal($order["id"], [], false, true);
 
-        return Response::ok($fullOrder);
+        return Response::ok(["items" => $fullOrder["items"]]);
 
     }
 

@@ -301,13 +301,40 @@ final class CartService
      * including lines deleted outright) for the caller to show what this
      * call actually did.
      *
+     * $nestConfigs=false keeps the historic shape — a flat list, configs and
+     * hosts side by side — which every existing caller (findLine, checkout,
+     * MarvinTools::summarize's own folding) matches lines against by id. Pass
+     * true to fold each config into its host's "configs" key instead; the
+     * total is computed from the flat rows either way, so nesting never
+     * changes what gets charged.
+     *
      * @param list<array<string, mixed>> $changes
      */
-    public function withItemsAndTotal(int $orderId, array $changes = [], bool $includeChanges = true): array
-    {
+    public function withItemsAndTotal(
+        int $orderId,
+        array $changes = [],
+        bool $includeChanges = true,
+        bool $nestConfigs = false,
+    ): array {
         $ordersTable = $this->ordersTable();
 
         $items = $this->repo->selectRows($this->orderItemsTable(), ['order_id' => $orderId]);
+
+        // A config line (parent_id set) also carries its identity back out as
+        // option_id/group_id — the shape MarvinTools/normalizeIds() write it
+        // in as — alongside the untouched product_id/category_id, so callers
+        // can read either without caring which one the row was inserted with.
+        $items = array_map(
+            static function (array $item): array {
+                if ((int) ($item['parent_id'] ?? 0) !== 0) {
+                    $item['option_id'] = $item['product_id'];
+                    $item['group_id']  = $item['category_id'];
+                }
+
+                return $item;
+            },
+            $items,
+        );
 
         $total = array_reduce(
             $items,
@@ -323,7 +350,7 @@ final class CartService
             throw new ApiException('Cart order disappeared while updating it');
         }
 
-        $order['items'] = $items;
+        $order['items'] = $nestConfigs ? $this->nestConfigs($items) : $items;
 
         if(!$includeChanges){
             return $order;
@@ -339,6 +366,37 @@ final class CartService
         ));
 
         return $order;
+    }
+
+    /**
+     * Folds each config (parent_id set) into its host's "configs" key,
+     * dropping it from the top level. Hosts with no configs get an empty
+     * array, not a missing key, so callers never need an isset() guard.
+     *
+     * @param list<array<string, mixed>> $items flat rows, as {@see withItemsAndTotal()} loads them
+     * @return list<array<string, mixed>> top-level lines only, each with a "configs" key
+     */
+    private function nestConfigs(array $items): array
+    {
+        $configsByParent = [];
+        foreach ($items as $item) {
+            $parentId = (int) ($item['parent_id'] ?? 0);
+            if ($parentId !== 0) {
+                $configsByParent[$parentId][] = $item;
+            }
+        }
+
+        $nested = [];
+        foreach ($items as $item) {
+            if ((int) ($item['parent_id'] ?? 0) !== 0) {
+                continue; // folded into its host above
+            }
+
+            $item['configs'] = $configsByParent[(int) $item['id']] ?? [];
+            $nested[] = $item;
+        }
+
+        return $nested;
     }
 
     /**

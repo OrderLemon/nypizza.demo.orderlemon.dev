@@ -6,22 +6,21 @@ namespace Plugins\Shop;
 
 use Plugins\Shop\Controllers\ShopController;
 use Plugins\Shop\Services\ShopService;
-use Pmsrapi\V2\Cluster\ServiceClient;
 use Pmsrapi\V2\Core\Container;
+use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Http\Request;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Plugin\AbstractPlugin;
 use Pmsrapi\V2\Plugin\PluginRegistrar;
 use Pmsrapi\V2\Plugin\PluginRouter;
-use Pmsrapi\V2\Support\Logger;
 
 /**
  * Shop identity resolution.
  *
- * nizu owns the `shops` table; this plugin exposes {@see ShopService} so any
- * other plugin (Whatsapp, Cart, ...) can resolve a shop by id or by phone
- * number without hand-rolling its own ServiceClient call, plus a couple of
- * thin routes over the same lookups.
+ * This plugin exposes {@see ShopService} so any other plugin (Whatsapp,
+ * Cart, ...) can resolve a shop by id or by phone number against the local
+ * `shops` table without hand-rolling its own Repository lookup, plus a
+ * couple of thin routes over the same lookups.
  */
 final class ShopPlugin extends AbstractPlugin
 {
@@ -30,8 +29,7 @@ final class ShopPlugin extends AbstractPlugin
         $registrar->singleton(
             ShopService::class,
             static fn(Container $c): ShopService => new ShopService(
-                $c->get(ServiceClient::class),
-                $c->get(Logger::class),
+                $c->get(Repository::class),
             ),
         );
 

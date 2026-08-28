@@ -39,10 +39,12 @@ class TranscribeService
         $this->pathToFile = $pathToFile;
 
         if( trim($this->pathToFile) === ""){
+            $this->logger->error("transcribe service", ["file path" => "Invalid file path: $this->pathToFile"]);
             throw new ValidationException(["file path" => "Invalid file path provided for transcribe service!"]);
         }
         
         if( trim($this->api) === "" || trim($this->token) === "" || trim($this->model) === ""){
+            $this->logger->error("transcribe service", ["config" => "Invalid configuration!"]);
             throw new ServiceException("Invalid configuration for transcrbibe service!");
         }
         
