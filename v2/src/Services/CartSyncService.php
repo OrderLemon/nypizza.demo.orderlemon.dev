@@ -79,11 +79,22 @@ final class CartSyncService
         }
     }
 
-    /** Inserts one item as a line, then recurses into its configs. */
+    /**
+     * Inserts one item as a line, then recurses into its configs. A
+     * zero-quantity item is a removal, not a real line — skip it (and, since
+     * there's no line to attach them to, its configs too) rather than
+     * inserting a dead 0-quantity row.
+     */
     private function insertLine(int $orderId, array $item, ?int $parentId): void
     {
         $item = $this->normalizeIds($item);
         $this->validateItem($item);
+
+        $quantity = max(0, (int) $item['quantity']);
+
+        if ($quantity === 0) {
+            return;
+        }
 
         $lineId = $this->repo->insertRow($this->orderItemsTable(), [
             'order_id'          => $orderId,
@@ -92,7 +103,7 @@ final class CartSyncService
             'item_description'  => (string) $item['item_description'],
             'unit_price'        => (float) $item['unit_price'],
             'vat_percentage'    => (int) $item['vat_percentage'],
-            'quantity'          => max(0, (int) $item['quantity']),
+            'quantity'          => $quantity,
             'campaign_id'       => $item['campaign_id'] ?? null,
             'product_reference' => $item['product_reference'] ?? null,
             'parent_id'         => $parentId,

@@ -23,6 +23,7 @@ final class PrintService
         $enabled = $this->config->secret("receipt.printing_enabled", false);
 
         if(!$enabled){
+            $this->logger->warning("Printing service disabled from config!", []);
             return true;
         }
 
