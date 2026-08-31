@@ -29,6 +29,9 @@ final class MenuService
     /** @var array<int,array<string,mixed>>|null product id => product */
     private ?array $index = null;
 
+    /** @var list<array<string,mixed>>|null raw campaigns from menu.json, unfiltered */
+    private ?array $campaignsRaw = null;
+
     public function __construct(
         private readonly Config $config,
         private readonly Logger $logger,
@@ -257,6 +260,12 @@ final class MenuService
         // Same shapes Marvin::menu() accepts: a bare list, or { "menu": ... },
         // where the menu may itself be { "categories": [...] }.
         $menu = array_is_list($decoded) ? $decoded : ($decoded['menu'] ?? []);
+
+        // Campaigns live alongside categories in the same node — grab them here,
+        // before $menu is narrowed down to just the categories list below.
+        $campaigns = is_array($menu) ? ($menu['campaigns'] ?? []) : [];
+        $this->campaignsRaw = is_array($campaigns) ? array_values($campaigns) : [];
+
         if (is_array($menu) && isset($menu['categories'])) {
             $menu = $menu['categories'];
         }
@@ -269,6 +278,20 @@ final class MenuService
         }
 
         return $this->index = $index;
+    }
+
+    /**
+     * Promos from menu.json, filtered to the ones currently active — reads
+     * the same menu.json as index() (building it first if it doesn't exist
+     * yet), never campaigns.json directly, so this never re-triggers a build.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function campaigns(): array
+    {
+        $this->index();
+
+        return $this->campaignService->activeNow($this->campaignsRaw ?? []);
     }
 
     /**

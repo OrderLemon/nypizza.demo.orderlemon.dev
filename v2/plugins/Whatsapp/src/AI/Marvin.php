@@ -350,7 +350,10 @@ final class Marvin
         }
 
         return json_encode(
-            $menu,
+            [
+                'products'  => $menu,
+                'campaigns' => $this->menuService->campaigns(),
+            ],
             JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
         );
     }
