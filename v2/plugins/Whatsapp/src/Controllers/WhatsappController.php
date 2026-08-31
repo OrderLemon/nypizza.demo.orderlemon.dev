@@ -436,7 +436,13 @@ final class WhatsappController
 
     private function headerImage() : ?string
     {
-        return $this->config->secret("cta.header.image");
+        $imagePath = $this->config->secret("cta.header.image", "");
+        
+        $imagePath = str_replace("{{shop_id}}", (string)shop_id, $imagePath);
+
+        $this->logger->info("CTA Header:", ["path" => $imagePath]);
+        
+        return $imagePath;
     }
 
     private function shopLinkWithProducts(array $ids) : string
@@ -551,6 +557,8 @@ final class WhatsappController
     {
         $welcome = $this->welcomeCTA();
 
+        return $welcome;
+        
         if ($welcome["sent"] !== true) {
             return ["sent" => false];
         }

@@ -48,11 +48,11 @@ final class CartService
             throw new ApiException("No client for $phoneNumber found!");
         }
 
-        $conversation = $this->conversations->getByPhone($phoneNumber);
+        // $conversation = $this->conversations->getByPhone($phoneNumber);
 
-        if($conversation === null){
-            throw new ApiException("No active conversation for $phoneNumber found!");
-        }
+        // if($conversation === null){
+        //     throw new ApiException("No active conversation for $phoneNumber found!");
+        // }
 
         $id = $this->repo->insertRow($table, [
             'full_name'    => $client["full_name"] ?? "", 
@@ -69,7 +69,7 @@ final class CartService
             throw new ApiException('Failed to create cart order');
         }
 
-        $this->conversations->upsertConversation($phoneNumber, ["order_id" =>$order["id"]]);
+        // $this->conversations->upsertConversation($phoneNumber, ["order_id" =>$order["id"]]);
 
         $order['items'] = [];
 
