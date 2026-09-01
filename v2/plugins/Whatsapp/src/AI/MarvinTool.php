@@ -11,6 +11,8 @@ enum MarvinTool: string
     case RemoveFromOrder = 'remove_from_order';
     case CheckoutOrder   = 'checkout_order';
     case GetCart   = 'get_cart';
+    case IdleReminder   = 'idle_reminder';
+    case CheckoutCompleted   = 'checkout_completed';
 }
 
 ?>

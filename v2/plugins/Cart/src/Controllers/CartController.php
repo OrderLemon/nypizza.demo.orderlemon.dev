@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Plugins\Cart\Controllers;
 
+use Plugins\Whatsapp\AI\MarvinTool;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Http\Request;
@@ -166,7 +167,7 @@ final class CartController
                     . "opens on its own.]",
                 'out',
                 'text',
-                'checkout_completed',
+                MarvinTool::CheckoutCompleted->value,
             );
         } catch (\Throwable $ex) {
             $this->logger->error("whatsapp: checkout transcript note", ["error" => $ex->getMessage()]);
