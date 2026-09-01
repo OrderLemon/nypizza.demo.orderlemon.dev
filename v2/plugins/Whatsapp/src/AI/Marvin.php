@@ -7,6 +7,7 @@ namespace Plugins\Whatsapp\AI;
 use Plugins\Whatsapp\AI\AnthropicClient;
 use Plugins\Whatsapp\AI\MarvinTools;
 use Plugins\Whatsapp\AI\MarvinTool;
+use Plugins\Whatsapp\Support\LanguageHelper;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\ValidationException;
@@ -62,6 +63,9 @@ final class Marvin
 
     private string $clientName = "";
 
+    /** Set from reply()'s $language argument; drives fallback()'s translated text only — never the cached system prompt. */
+    private string $replyLanguage = 'en';
+
     private const STALE = [
         MarvinTool::GetUsualForUser->value => '[Told them their usual. Details omitted — look it up again if asked.]',
         MarvinTool::TrackOrder->value           => '[Reported delivery status. Details omitted — look it up again if asked.]',
@@ -76,9 +80,6 @@ final class Marvin
      */
     private const MAX_TOOL_TURNS = 4;
 
-    private const DEFAULT_FALLBACK =
-        'Sorry, I can\'t help you right now. A colleague will help you further: https://wa.me/ruvenss';
-
     private ?string $systemText = null;
 
     /** @var array<string,mixed>|null */
@@ -91,6 +92,7 @@ final class Marvin
         private readonly JsonService $jsonService,
         private readonly Config $config,
         private readonly Logger $logger,
+        private readonly LanguageHelper $language,
     ) {}
 
     // ---------------------------------------------------------------- replying
@@ -109,12 +111,19 @@ final class Marvin
      * @param array<string,mixed> $conversation decoded <phone>.json
      * @param string|null $phone from the gateway envelope. Pass it explicitly:
      *                    it is the only identity the tools can trust.
+     * @param string|null $language ISO 639-1 code the shopper is detected to be
+     *                    writing in (see LanguageHelper). Only ever picks which
+     *                    translated string fallback() returns — it is NOT sent
+     *                    to Claude, so it cannot affect systemBlocks() (which
+     *                    must stay byte-identical across shoppers for the
+     *                    prompt cache to warm) or the messages array.
      */
-    public function reply(array $conversation, array $shopInfo, ?string $clientName = "", ?string $phone = null): array
+    public function reply(array $conversation, array $shopInfo, ?string $clientName = "", ?string $phone = null, ?string $language = null): array
     {
         $this->updateShopInfo($shopInfo);
 
         $this->clientName = $clientName ?? "";
+        $this->replyLanguage = ($language !== null && $language !== '') ? $language : 'en';
 
         $this->tools->reset();
 
@@ -436,13 +445,16 @@ final class Marvin
         return $this->config->secret("marvin.{$key}", $default);
     }
 
+
     private function fallback(): string
     {
-        $fallback = $this->setting('fallback', self::DEFAULT_FALLBACK);
+        $override = $this->setting('fallback', null);
 
-        return is_string($fallback) && trim($fallback) !== ''
-            ? $fallback
-            : self::DEFAULT_FALLBACK;
+        if (is_string($override) && trim($override) !== '') {
+            return $override;
+        }
+
+        return $this->language->translate('marvin_fallback', $this->replyLanguage);
     }
 
     // ------------------------------------------------------------- history

@@ -20,6 +20,7 @@ use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Services\PrintService;
 use Pmsrapi\V2\Services\ShopService;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
+use Plugins\Whatsapp\Support\LanguageHelper;
 use Plugins\Support\ShopContext;
 
 final class CartPlugin extends AbstractPlugin
@@ -36,6 +37,7 @@ final class CartPlugin extends AbstractPlugin
             $c->get(ChatTranscriptService::class),
             $c->get(PrintService::class),
             $c->get(ShopService::class),
+            $c->get(LanguageHelper::class),
         ));
     }
 

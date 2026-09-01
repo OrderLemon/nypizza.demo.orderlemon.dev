@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Plugins\Cart\Controllers;
 
 use Plugins\Whatsapp\AI\MarvinTool;
+use Plugins\Whatsapp\Support\LanguageHelper;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Http\Request;
@@ -35,6 +36,7 @@ final class CartController
         private readonly ChatTranscriptService $transcripts,
         private readonly PrintService $printService,
         private readonly ShopService $shopService,
+        private readonly LanguageHelper $language,
     ){}
 
     public function update(Request $request): Response
@@ -209,7 +211,17 @@ final class CartController
     private function sendOrderLostMessage(string $phone, ?string $conversationId = null) : bool
     {
         try{
-            $this->whatsappGateway->sendText($phone, "Your order got lost. Please contact our team: https://wa.me/ruvenss");
+            $language = $this->language->detect($phone, '');
+
+            $this->transcripts->append(
+                $phone,
+                "[System note - not shown to the shopper: their order was created but the ticket could not be generated. "
+                    . "They will receive a message about it, and they should contact the shop if they don't get a ticket.]",
+                'out',
+                'text',
+                MarvinTool::OrderLost->value,
+            );
+            $this->whatsappGateway->sendText($phone, $this->language->translate('order_lost', $language));
             return true;
         }catch(\Exception $ex){
             $this->logger->error("whatsapp: order lost", ["error" => $ex->getMessage()]);
@@ -233,12 +245,14 @@ final class CartController
     {
         try
         {
+            $language = $this->language->detect($phone, '');
+
             $this->whatsappGateway->sendButtons(
                 $phone,
-                "Thank you for ordering at {$this->shopService->name()}!",
-                $this->trackOrderButton(),
+                $this->language->translate('thank_you_for_ordering', $language, ['shop_name' => $this->shopService->name()]),
+                $this->trackOrderButton($language),
                 $conversationId);
-            
+
             return true;
         }catch(\Exception $ex){
             $this->logger->error("whatsapp: thank you message", ["error" => $ex->getMessage()]);
@@ -246,13 +260,13 @@ final class CartController
         }
     }
 
-    private function trackOrderButton() : array
+    private function trackOrderButton(string $language) : array
     {
         return [
             [
                 "id" => "campaigntype-1",
                 "type" => "reply",
-                "title" => "Track my order"
+                "title" => $this->language->translate('track_order', $language)
             ],
         ];
     }
