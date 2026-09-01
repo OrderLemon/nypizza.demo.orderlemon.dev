@@ -10,6 +10,7 @@ enum MarvinTool: string
     case AddToOrder      = 'add_to_order';
     case RemoveFromOrder = 'remove_from_order';
     case CheckoutOrder   = 'checkout_order';
+    case GetCart   = 'get_cart';
 }
 
 ?>

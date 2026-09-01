@@ -23,6 +23,6 @@ final class StoresController
     {
         $stores = $this->jsonService->load("stores");
 
-        return Response::ok($stores);
+        return Response::ok(["stores" => $stores]);
     }
 }

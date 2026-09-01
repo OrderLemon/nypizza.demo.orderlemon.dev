@@ -131,6 +131,7 @@ final class WhatsappController
             MarvinTool::CheckoutOrder->value => $this->draftStatus($reply),
             MarvinTool::AddToOrder->value => $this->draftStatus($reply),
             MarvinTool::RemoveFromOrder->value => $this->draftStatus($reply),
+            MarvinTool::GetCart->value => $this->sendCartStatus($reply),
             default => ['sent' => false, 'error' => "Marvin returned an unknown reply type: " . ($reply["type"] ?? '')],
         };
     }
@@ -174,6 +175,46 @@ final class WhatsappController
             ]);
 
             return ['sent' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    private function sendCartStatus(array $reply) : array
+    {
+        if(!isset($reply["cart"]) || empty($reply["cart"])){
+            return $this->marvinFallbackReply();
+        }
+
+        $fullMessage = $reply["message"];
+
+        // Anything other than "ordering" is an order already placed — there is
+        // nothing left to check out, so send plain text instead of the
+        // checkout button. sendMarvinText() also logs the transcript turn.
+        if (($reply["cart"]["status"] ?? 'ordering') !== 'ordering') {
+            return $this->sendMarvinText($fullMessage);
+        }
+
+        try{
+            $this->gateway->sendLink(
+                $this->messagePayload["phone_number"],
+                $fullMessage,
+                "OPEN",
+                $this->shopLinkWithCheckout(),
+                "To get your menu always click here",
+                null,
+                $this->messagePayload["conversation_id"]);
+
+            // Log Marvin's own turn, or he will not see this reply on the next
+            // message and the thread loses all context.
+            $this->transcripts->append($this->messagePayload["phone_number"], $fullMessage, 'out', 'text', MarvinTool::GetCart->value);
+
+            return ['sent' => true];
+        }catch(Exception $ex){
+            $this->logger->error('whatsapp: outbound reply failed', [
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
+                'error' => $ex->getMessage(),
+            ]);
+            return ['sent' => false, 'error' => $ex->getMessage()];
         }
     }
 
@@ -509,6 +550,7 @@ final class WhatsappController
             return $this->handleLocationReply();
         }
 
+        $this->logger->info("WP Client upsert result", $upsertResult);
         if ($upsertResult["action"] === "inserted") {
             return $this->handleNewClientReply();
         }

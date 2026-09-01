@@ -13,6 +13,7 @@ use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Helpers\CustomerHelper;
 use Pmsrapi\V2\Services\MenuService;
+use Pmsrapi\V2\Services\JsonService;
 use Throwable;
 
 /**
@@ -55,6 +56,8 @@ final class Marvin
     /** Opus 4.8 silently ignores cache_control below this many tokens. */
     private const CACHE_MIN_TOKENS = 1024;
 
+    // holds the shop info for the current request, including name, and stores
+    // This would be better in a company info service, but for now we will set it here until we have a better place to put it
     private array $shopInfo = [];
 
     private string $clientName = "";
@@ -63,6 +66,7 @@ final class Marvin
         MarvinTool::GetUsualForUser->value => '[Told them their usual. Details omitted — look it up again if asked.]',
         MarvinTool::TrackOrder->value           => '[Reported delivery status. Details omitted — look it up again if asked.]',
         MarvinTool::GreetWithUsual->value            => '[Greeted them and offered their usual. Details omitted — look it up again if asked.]',
+        MarvinTool::GetCart->value              => '[Read back their cart/order. Details omitted — look it up again if asked.]',
     ];
 
     /**
@@ -84,6 +88,7 @@ final class Marvin
         private readonly AnthropicClient $client,
         private readonly MarvinTools $tools,
         private readonly MenuService $menuService,
+        private readonly JsonService $jsonService,
         private readonly Config $config,
         private readonly Logger $logger,
     ) {}
@@ -107,7 +112,7 @@ final class Marvin
      */
     public function reply(array $conversation, array $shopInfo, ?string $clientName = "", ?string $phone = null): array
     {
-        $this->shopInfo = $shopInfo;
+        $this->updateShopInfo($shopInfo);
 
         $this->clientName = $clientName ?? "";
 
@@ -281,6 +286,11 @@ final class Marvin
         }
 
         //Marvin prompt requries shop name and address 
+        if(!isset($this->shopInfo["stores"]) || empty($this->shopInfo["stores"])){
+            throw new ApiException("No stores found in shop info to build prompt!");
+        }
+
+        //Marvin prompt requries shop name and address 
         if(!isset($this->shopInfo["name"]) || trim($this->shopInfo["name"]) === ""){
             throw new ApiException("Shop name required to build prompt!");
         }
@@ -290,15 +300,19 @@ final class Marvin
         }
 
         //build the address
-        $address = isset($this->shopInfo["country"]) ? $this->shopInfo["country"] . ", " : " ";
-        $address .= isset($this->shopInfo["city"]) ? $this->shopInfo["city"] . ", " : " ";
-        $address .= $this->shopInfo["street"] ?? " ";
+        // $address = isset($this->shopInfo["country"]) ? $this->shopInfo["country"] . ", " : " ";
+        // $address .= isset($this->shopInfo["city"]) ? $this->shopInfo["city"] . ", " : " ";
+        // $address .= $this->shopInfo["street"] ?? " ";
 
+        $locations = json_encode($this->shopInfo["stores"]);
+    
+        
         $this->systemText = str_replace('{{CLIENT_NAME}}', ucwords($this->clientName), $template);
 
-        $this->systemText = str_replace('{{SHOP_NAME}}', strtoupper($this->shopInfo["name"]), $this->systemText);
+        // company name will be the shop name in the demo version
+        $this->systemText = str_replace('{{COMPANY_NAME}}', strtoupper($this->shopInfo["name"]), $this->systemText);
 
-        $this->systemText = str_replace('{{SHOP_ADDRESS}}', strtoupper($address), $this->systemText);
+        $this->systemText = str_replace('{{LOCATIONS}}', strtoupper($locations), $this->systemText);
 
         $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $this->systemText);
 
@@ -582,5 +596,42 @@ final class Marvin
         }
 
         return $content;
+    }
+
+    private function updateShopInfo(array $shopInfo): void
+    {
+        if(!isset($shopInfo["name"]) || trim($shopInfo["name"]) === ""){
+            throw new ValidationException(["Shop name" => "Shop name is required to build prompt!"]);
+        }
+
+        if(!isset($shopInfo["street"]) || trim($shopInfo["street"]) === ""){
+            throw new ValidationException(["Shop address" => "Shop address is required to build prompt!"]);
+        }
+
+        $this->shopInfo = $shopInfo;
+
+        // Set stores in the shop info
+        $stores = $this->jsonService->load("stores");
+
+        // $stores = array_map(static function (array $store): array {
+        //     if (isset($store["street"]) && trim($store["street"]) !== "") {
+        //         $store["fullAddress"] = "Street: " . $store["street"] . " ";
+        //         $store["fullAddress"] .= ", City: " . 
+        //             (isset($store["city"]) ? $store["city"] : "");
+        //     }
+
+        //     if (isset($store["openingHours"])) {
+        //         $store["openingHoursFormated"] = join(", ", array_map(
+        //             static fn($day, $hours) => ucfirst($day) . ": " . $hours,
+        //             array_keys($store["openingHours"]),
+        //             $store["openingHours"],
+        //         ));
+        //     }
+
+        //     return $store;
+        // }, $stores);
+
+        $this->shopInfo["stores"] = $stores;
+
     }
 }

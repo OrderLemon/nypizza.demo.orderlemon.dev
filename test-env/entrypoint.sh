@@ -6,11 +6,7 @@ set -euo pipefail
 # Copy the requested secrets file to the path expected by v2/config.php.
 SECRET_FILE="${PMSRAPI_SECRET_FILE:-/opt/pmsrapi/test-env/nypizza.demo.json}"
 MOCKUPS="${MOCKUPS:-/opt/pmsrapi/mockups/}"
-MARVIN_1="${MARVIN:-/opt/pmsrapi/marvin.v1.txt}"
-MARVIN_2="${MARVIN:-/opt/pmsrapi/marvin.v2.txt}"
-MARVIN_3="${MARVIN:-/opt/pmsrapi/marvin.v3.txt}"
-MARVIN_4="${MARVIN:-/opt/pmsrapi/marvin.v4.txt}"
-MARVIN_5="${MARVIN:-/opt/pmsrapi/marvin.v5.txt}"
+MARVIN_PROMPT="${MARVIN:-/opt/pmsrapi/marvin.v6.txt}"
 MENU="${MENU:-/opt/pmsrapi/menu.json}"
 PORT="${PMSRAPI_PORT:-8080}"
 
@@ -23,11 +19,7 @@ cp "$SECRET_FILE" /opt/nypizza.demo.json
 mkdir -p /home/demo.data/98/mockups
 cp -r "${MOCKUPS%/}/." /home/demo.data/98/mockups/
 mkdir -p /home/demo.data/marvin_prompts/
-cp "${MARVIN_1}" /home/demo.data/marvin_prompts/marvin.v1.txt
-cp "${MARVIN_2}" /home/demo.data/marvin_prompts/marvin.v2.txt
-cp "${MARVIN_3}" /home/demo.data/marvin_prompts/marvin.v3.txt
-cp "${MARVIN_4}" /home/demo.data/marvin_prompts/marvin.v4.txt
-cp "${MARVIN_5}" /home/demo.data/marvin_prompts/marvin.v5.txt
+cp "${MARVIN_PROMPT}" /home/demo.data/marvin_prompts/marvin.v6.txt
 mkdir -p /home/demo.data/98/menu
 cp "${MENU}" /home/demo.data/98/menu.json
 mkdir -p /home/errors/
