@@ -327,16 +327,14 @@ final class Marvin
 
     private function promptPath(): string
     {
-        $path = $this->config->secret('marvin.prompts');
+        $path = $this->config->secret('marvin.prompts.main',);
 
         if(!defined("shop_id") || !is_numeric(shop_id)){
             throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
         }
 
-        $path = str_replace("{{shop_id}}", (string)shop_id, $path);
-
         if (!is_string($path) || trim($path) === '') {
-            throw new ApiException('marvin.prompts is not set in the secret config.');
+            throw new ApiException('marvin.prompts.main is not set in the secret config. Provided value: ' . var_export($path, true));
         }
 
         return $path;
