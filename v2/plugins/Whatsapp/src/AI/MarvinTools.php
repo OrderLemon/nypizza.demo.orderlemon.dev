@@ -239,6 +239,22 @@ final class MarvinTools
                     'required'   => [],
                 ],
             ],
+            [
+                'name'        => MarvinTool::GetCart->value,
+                'description' =>
+                    'Retrieve the current shopping cart and its total. '
+                    . 'Call this when they ask to see what they have in their cart or want to review their order. '
+                    . 'Read the cart and the total back to them in your message so they can see '
+                    . 'what they are paying for, then tell them to tap the link to finish. '
+                    . 'Do not attempt to show users other products other than what is in their cart. '
+                    . 'You cannot take payment and you are not placing the order — the link is. '   
+                    . 'If it says empty_basket, they have not chosen anything yet.',
+                'input_schema' => [
+                    'type'       => 'object',
+                    'properties' => new \stdClass(),
+                    'required'   => [],
+                ],
+            ],
         ];
     }
 
@@ -271,6 +287,7 @@ final class MarvinTools
                 MarvinTool::AddToOrder->value      => $this->addToOrder($phone, $in),
                 MarvinTool::RemoveFromOrder->value => $this->removeFromOrder($phone, $in),
                 MarvinTool::CheckoutOrder->value   => $this->checkoutOrder($phone),
+                MarvinTool::GetCart->value         => $this->getCart($phone),
                 default       => throw new ApiException("unknown tool: {$name}"),
             };
 
@@ -446,6 +463,31 @@ final class MarvinTools
             'ok'    => true,
             'total' => $full['total'],
             'draft' => $draft,
+        ];
+    }
+
+    private function getCart(string $phone): array
+    {
+        $order = $this->cartService->activeOrderFor($phone);
+
+        if ($order === null) {
+            return ['ok' => false, 'reason' => 'empty_basket'];
+        }
+
+        $full = $this->cartService->withItemsAndTotal((int) $order['id'], [], false);
+
+        if ($full['items'] === []) {
+            return ['ok' => false, 'reason' => 'empty_basket'];
+        }
+
+        $cart = $this->summarize($full);
+
+        $this->attach(MarvinTool::GetCart->value, ['cart' => $cart]);
+
+        return [
+            'ok'    => true,
+            'total' => $full['total'],
+            'cart' => $cart,
         ];
     }
 
