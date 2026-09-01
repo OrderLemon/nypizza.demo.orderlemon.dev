@@ -11,8 +11,11 @@ enum MarvinTool: string
     case RemoveFromOrder = 'remove_from_order';
     case CheckoutOrder   = 'checkout_order';
     case GetCart   = 'get_cart';
+
+    // used for system notes in the chat transcript, not for actual Marvin calls
     case IdleReminder   = 'idle_reminder';
     case CheckoutCompleted   = 'checkout_completed';
+    case OrderLost   = 'order_lost';
 }
 
 ?>

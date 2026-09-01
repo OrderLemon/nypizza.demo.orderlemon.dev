@@ -29,6 +29,8 @@ use Pmsrapi\V2\Services\CartService;
 use Pmsrapi\V2\Services\MenuService;
 use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Services\TranscribeService;
+use Pmsrapi\V2\Cache\RedisClient;
+use Plugins\Whatsapp\Support\LanguageHelper;
 
 /**
  * WhatsApp inbound receiver.
@@ -63,13 +65,20 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(Logger::class)
         ));
 
+        $registrar->singleton(LanguageHelper::class, static fn(Container $c): LanguageHelper => new LanguageHelper(
+            $c->get(AnthropicClient::class),
+            $c->get(RedisClient::class),
+            $c->get(Logger::class)
+        ));
+
         $registrar->singleton(Marvin::class, static fn(Container $c): Marvin => new Marvin(
             $c->get(AnthropicClient::class),
             $c->get(MarvinTools::class),
             $c->get(MenuService::class),
             $c->get(JsonService::class),
             $c->get(Config::class),
-            $c->get(Logger::class)
+            $c->get(Logger::class),
+            $c->get(LanguageHelper::class),
         ));
 
         $registrar->singleton(
@@ -93,6 +102,7 @@ final class WhatsappPlugin extends AbstractPlugin
                 $c->get(ShopService::class),
                 $c->get(ChatTranscriptService::class),
                 $c->get(TranscribeService::class),
+                $c->get(LanguageHelper::class),
             ),
         );
     }

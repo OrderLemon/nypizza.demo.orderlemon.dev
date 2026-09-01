@@ -128,6 +128,7 @@ function isDue(array $lastEntry, DateTimeImmutable $now): bool
     $tool = $lastEntry['source_tool'] ?? null;
     if ($tool === MarvinTool::CheckoutCompleted->value
             || $tool === MarvinTool::IdleReminder->value
+            || $tool === MarvinTool::OrderLost->value
             || $tool === MarvinTool::TrackOrder->value) {
         return false;
     }

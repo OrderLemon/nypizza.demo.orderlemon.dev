@@ -19,6 +19,7 @@ use Pmsrapi\V2\Services\TranscribeService;
 use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Core\Config;
+use Plugins\Whatsapp\Support\LanguageHelper;
 
 
 /**
@@ -61,6 +62,7 @@ final class WhatsappController
         private readonly ShopService $shopService,
         private readonly ChatTranscriptService $transcripts,
         private readonly TranscribeService $transcribe,
+        private readonly LanguageHelper $language,
     ) {}
 
     /**
@@ -118,7 +120,12 @@ final class WhatsappController
     private function marvinReply() : array
     {
 
-        $reply = $this->marvin->reply($this->transcripts->load($this->messagePayload["phone_number"]), $this->shopInfo(),  $this->messagePayload["full_name"]);
+        $reply = $this->marvin->reply(
+            $this->transcripts->load($this->messagePayload["phone_number"]),
+            $this->shopInfo(),
+            $this->messagePayload["full_name"],
+            language: $this->detectedLanguage(),
+        );
         
         // var_dump($reply["type"]);
         
@@ -151,14 +158,7 @@ final class WhatsappController
 
         try {
 
-            $this->gateway->sendLink(
-                $this->messagePayload["phone_number"],
-                $reply["message"],
-                "OPEN",
-                $this->shopLinkWithCheckout(),
-                "To get your menu always click here",
-                null,
-                $this->messagePayload["conversation_id"]);
+            $this->sendMenuLink($reply["message"], $this->shopLinkWithCheckout());
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context. Tagged with
@@ -194,14 +194,7 @@ final class WhatsappController
         }
 
         try{
-            $this->gateway->sendLink(
-                $this->messagePayload["phone_number"],
-                $fullMessage,
-                "OPEN",
-                $this->shopLinkWithCheckout(),
-                "To get your menu always click here",
-                null,
-                $this->messagePayload["conversation_id"]);
+            $this->sendMenuLink($fullMessage, $this->shopLinkWithCheckout());
 
             // Log Marvin's own turn, or he will not see this reply on the next
             // message and the thread loses all context.
@@ -232,14 +225,7 @@ final class WhatsappController
 
         try {
 
-            $this->gateway->sendLink(
-                $this->messagePayload["phone_number"],
-                $reply["message"],
-                "OPEN",
-                $this->shopLinkWithProducts($reply["product_ids"]),
-                "To get your menu always click here",
-                null,
-                $this->messagePayload["conversation_id"]);
+            $this->sendMenuLink($reply["message"], $this->shopLinkWithProducts($reply["product_ids"]));
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -271,14 +257,7 @@ final class WhatsappController
 
         try {
 
-            $this->gateway->sendLink(
-                $this->messagePayload["phone_number"],
-                $reply["message"],
-                "OPEN",
-                $this->shopLinkWithUsualOrder($reply["order"]["hash"]),
-                "To get your menu always click here",
-                null,
-                $this->messagePayload["conversation_id"]);
+            $this->sendMenuLink($reply["message"], $this->shopLinkWithUsualOrder($reply["order"]["hash"]));
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -312,7 +291,7 @@ final class WhatsappController
             $this->gateway->sendButtons(
                 $this->messagePayload["phone_number"],
                 $reply["message"],
-                $this->getButtonsForReturningUser(),
+                $this->getButtonsForReturningUser($this->detectedLanguage()),
                 $this->messagePayload["conversation_id"]);
             
             // Log Marvin's own turn, or he will not see his previous answers on
@@ -364,14 +343,7 @@ final class WhatsappController
     private function sendMarvinText(string $marvinReplyMessage) : array
     {
         try {
-            $this->gateway->sendLink(
-                $this->messagePayload["phone_number"],
-                $marvinReplyMessage,
-                "OPEN",
-                $this->shopLink(),
-                "To get your menu always click here",
-                null,
-                $this->messagePayload["conversation_id"]);
+            $this->sendMenuLink($marvinReplyMessage, $this->shopLink());
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -402,14 +374,7 @@ final class WhatsappController
         $greeting = "Hi, Welcome to " . $shopName;
 
         try {
-            $this->gateway->sendLink(
-                $this->messagePayload["phone_number"],
-                $greeting,
-                "OPEN",
-                $this->shopLink(),
-                "To get your menu always click here",
-                $this->headerImage(),
-                $this->messagePayload["conversation_id"]);
+            $this->sendMenuLink($greeting, $this->shopLink(), $this->headerImage());
 
             // Record the greeting so Marvin knows the shopper was already
             // welcomed and does not greet them a second time.
@@ -618,7 +583,7 @@ final class WhatsappController
     private function marvinFallbackReply(): array
     {
         return $this->sendText(
-            "Sorry, I couldn't understand that voice message. Could you type it instead?"
+            $this->language->translate('voice_message_fallback', $this->detectedLanguage())
         );
     }
 
@@ -814,25 +779,52 @@ final class WhatsappController
         return $errors;
     }
 
-    private function getButtonsForReturningUser() : array
+    private function getButtonsForReturningUser(string $language) : array
     {
         return [
             [
                 "id" => "campaigntype-1",
                 "type" => "reply",
-                "title" => "The usual"
+                "title" => $this->language->translate('the_usual', $language)
             ],
             [
                 "id" => "campaigntype-2",
                 "type" => "reply",
-                "title" => "Something else"
+                "title" => $this->language->translate('something_else', $language)
             ],
             [
                 "id" => "campaigntype-3",
                 "type" => "reply",
-                "title" => "Today's promo"
+                "title" => $this->language->translate('todays_promo', $language)
             ],
 
         ];
+    }
+
+    private function sendMenuLink(string $message, string $url, ?string $headerImage = null) : array
+    {
+        $language = $this->detectedLanguage();
+
+        return $this->gateway->sendLink(
+            $this->messagePayload["phone_number"],
+            $message,
+            $this->language->translate('open', $language),
+            $url,
+            $this->language->translate('open_menu_caption', $language),
+            $headerImage,
+            $this->messagePayload["conversation_id"]);
+    }
+
+    /**
+     * Detected once per phone number (cached — see LanguageHelper) rather than
+     * per message, since this only matters where fixed UI strings (button
+     * labels) are sent; Marvin's own text replies already adapt on their own.
+     */
+    private function detectedLanguage() : string
+    {
+        return $this->language->detect(
+            $this->messagePayload["phone_number"],
+            $this->messagePayload["message"] ?? '',
+        );
     }
 }
