@@ -112,13 +112,17 @@ final class MarvinTools
             [
                 'name'        => MarvinTool::GreetWithUsual->value,
                 'description' =>
-                    'You MUST call this as the FIRST thing '
-                    . 'you do ONLY and WHENEVER a shopper greets you, before writing '
-                    . 'any reply. Alyways use this when a shopper is greeting you even if they greet you multiple times. It tells you whether they have ordered before, what they order '
-                    . 'most often, and whether they have a delivery already on its way. Reply '
-                    . 'buttons are attached automatically — write only the greeting line and do '
-                    . 'not list the options yourself. Call this once per conversation opening, '
-                    . 'never again after the shopper has started choosing items.',
+                    'You MUST call this as the FIRST thing you do, before writing any reply, '
+                    . 'EVERY SINGLE TIME the shopper sends a greeting — "hi", "hello", "hey", '
+                    . '"good morning", and the like. This applies every time, with no exceptions: '
+                    . 'the first greeting of the conversation, and any later greeting too, even if '
+                    . 'they already greeted you earlier in this same conversation, even if they have '
+                    . 'already started choosing items, even if you already called this tool before. '
+                    . 'Never skip it because you think you already know the answer from earlier in '
+                    . 'the conversation — always call it fresh. It tells you whether they have '
+                    . 'ordered before, what they order most often, and whether they have a delivery '
+                    . 'already on its way. Reply buttons are attached automatically — write only the '
+                    . 'greeting line and do not list the options yourself.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => new \stdClass(),
