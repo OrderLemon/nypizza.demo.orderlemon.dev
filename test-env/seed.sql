@@ -350,6 +350,35 @@ CREATE TABLE `shops` (
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM AUTO_INCREMENT=102 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+CREATE TABLE `clients_data` (
+  `phonenumber` varchar(14) NOT NULL,
+  `email` varchar(150) DEFAULT NULL,
+  `language` varchar(2) DEFAULT NULL,
+  `first_name` varchar(30) DEFAULT NULL,
+  `last_name` varchar(40) DEFAULT NULL,
+  `country` varchar(2) DEFAULT NULL,
+  `city` varchar(80) DEFAULT NULL,
+  `cp` varchar(10) DEFAULT NULL,
+  `region` varchar(40) DEFAULT NULL,
+  `street` varchar(90) DEFAULT NULL,
+  `latitude` varchar(11) DEFAULT NULL,
+  `longitude` varchar(12) DEFAULT NULL,
+  `business` varchar(200) DEFAULT NULL,
+  `used_shops` text DEFAULT NULL,
+  `last_order` datetime DEFAULT NULL,
+  `last_used_shop` int(11) DEFAULT NULL,
+  `payment_pref` varchar(50) DEFAULT NULL,
+  `gdpr_ok` tinyint(1) NOT NULL DEFAULT 1,
+  `name_confirmed` tinyint(1) DEFAULT 0,
+  `amount_of_orders` int(11) DEFAULT 0,
+  `ip` varchar(46) DEFAULT NULL,
+  `platform` text DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `creation_date` datetime DEFAULT current_timestamp(),
+  `lastvisit` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`phonenumber`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 INSERT INTO shops (
   id, company_id, name,
   country, state, city, zip, street,
@@ -360,7 +389,7 @@ INSERT INTO shops (
 ) VALUES (
   98, 1, 'New York Pizza',
   'be', '', 'Kasterlee', '2460', 'Hofstraat 26B',
-  '', '',
+  '3197058016728', 'fOiS0K8Twvy43PfmwrNPuEKSH2FGCKJOjFgxkrZMg5AgFBJU1UGhIb3J5a4SVTgD',
   0, 0,
   35, 1.5,
   0, 0, 0, 0

@@ -56,6 +56,8 @@ final class ShopController
             'company_id' => $shop['company_id'],
             'phonenumber' => $shop['phonenumber'],
             'enabled' => $shop['enabled'],
+            "min_pickup_minutes" => 20,
+            "min_delivery_minutes" => 45,
         ];
     }
 }

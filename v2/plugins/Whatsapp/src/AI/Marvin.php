@@ -71,6 +71,7 @@ final class Marvin
         MarvinTool::TrackOrder->value           => '[Reported delivery status. Details omitted — look it up again if asked.]',
         MarvinTool::GreetWithUsual->value            => '[Greeted them and offered their usual. Details omitted — look it up again if asked.]',
         MarvinTool::GetCart->value              => '[Read back their cart/order. Details omitted — look it up again if asked.]',
+        MarvinTool::DetectLanguage->value       => '[Detected language. Details omitted — look it up again if asked.]',
     ];
 
     /**
