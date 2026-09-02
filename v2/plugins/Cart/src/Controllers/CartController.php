@@ -11,6 +11,7 @@ use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Http\Request;
 use Pmsrapi\V2\Services\CartService;
 use Pmsrapi\V2\Services\CartSyncService;
+use Pmsrapi\V2\Services\ClientService;
 use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Services\PrintService;
@@ -37,6 +38,7 @@ final class CartController
         private readonly PrintService $printService,
         private readonly ShopService $shopService,
         private readonly LanguageHelper $language,
+        private readonly ClientService $clientService,
     ){}
 
     public function update(Request $request): Response
@@ -105,19 +107,19 @@ final class CartController
         $ticketUrl = $this->queryService->createTicket($order["id"]);
 
         
-        if($ticketUrl === null){
-            $this->sendOrderLostMessage($body["phonenumber"]);
-            //send order lost message
-            return Response::Ok(
-                [
-                    "status" => "failure",
-                    "message" => "Order was created but the ticked could not be generated!",
-                    "data" => ["order_id" => $order["id"]]
-                ]);
-        }
+        // if($ticketUrl === null){
+        //     $this->sendOrderLostMessage($body["phonenumber"]);
+        //     //send order lost message
+        //     return Response::Ok(
+        //         [
+        //             "status" => "failure",
+        //             "message" => "Order was created but the ticked could not be generated!",
+        //             "data" => ["order_id" => $order["id"]]
+        //         ]);
+        // }
 
         // currently using order time for pickup time
-        $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
+        // $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
 
         $this->sendThankYouMessage($body["phonenumber"]);
 
@@ -240,12 +242,11 @@ final class CartController
         }
     }
 
-
     private function sendThankYouMessage(string $phone, ?string $conversationId = null) : bool
     {
         try
         {
-            $language = $this->language->detect($phone, '');
+            $language = $this->clientService->getClientLanguage($phone);
 
             $this->whatsappGateway->sendButtons(
                 $phone,

@@ -83,8 +83,15 @@ class ClientService
      */
     public function upsertFromCheckout(string $phone, array $details): ?array
     {
+        //upsert the shop client
         $result = $this->repo->upsert(
             $this->clientsTable(),
+            [...$details, 'phonenumber' => $phone],
+            ["street","city","country","box","state"]);
+
+        //upsert the global client
+        $this->repo->upsert(
+            "clients_data",
             [...$details, 'phonenumber' => $phone],
             ["street","city","country","box","state"]);
 
@@ -229,19 +236,14 @@ class ClientService
 
     public function getOrInsertGlobalClient(string $phoneNumber, array $data): ?array
     {
-        $client = $this->getGlobalClient($phoneNumber);
+        $client = $this->upsertGlobalClient($phoneNumber, $data);
 
         if ($client === null) {
-            
-            $client = $this->insertGlobalClient($phoneNumber, $data);
-
-            if($client === null){
-                throw new ServiceException("Failed to insert global client for phone: $phoneNumber");
-            }
-
-            $client = $client["record"];
+            throw new ServiceException("Failed to upsert global client for phone number: $phoneNumber");
         }
 
+        $client = $client['record'] ?? null;
+        
         //shop clients require full_name
         $client["full_name"] = trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''));
         
@@ -276,6 +278,13 @@ class ClientService
         ], updateColumns: array_keys($data));
 
         return $result;
+    }
+
+    public function getClientLanguage(string $phoneNumber): string
+    {
+        $client = $this->getGlobalClient($phoneNumber);
+
+        return $client['language'] ?? 'en';
     }
 }
 
