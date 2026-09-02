@@ -267,7 +267,12 @@ final class MarvinTools
             [
                 'name'        => MarvinTool::DetectLanguage->value,
                 'description' =>
-                    'Switch the language you reply in. Call this EVERY SINGLE TIME the shopper '
+                    'REQUIRED every time the shopper asks to change language, in addition to '
+                    . 'writing your reply in that language. Just answering in the new language is '
+                    . 'NOT enough and does not count as switching: this tool is the only thing that '
+                    . 'makes the switch stick for their next message. Skip it and the shopper has '
+                    . 'to ask again every single time, because nothing was actually remembered. '
+                    . 'Call this EVERY SINGLE TIME the shopper '
                     . 'asks to change language — "let\'s change language", "can you talk in '
                     . 'Spanish?", "in French please", "habla español", "actually, speak German" — '
                     . 'with no exceptions: call it again even if they already asked to switch '

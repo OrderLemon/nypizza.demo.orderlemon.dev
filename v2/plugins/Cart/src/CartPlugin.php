@@ -13,6 +13,7 @@ use Pmsrapi\V2\Plugin\PluginRegistrar;
 use Pmsrapi\V2\Services\CartService;
 use Plugins\Cart\Controllers\CartController;
 use Pmsrapi\V2\Services\CartSyncService;
+use Pmsrapi\V2\Services\ClientService;
 use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
@@ -38,6 +39,7 @@ final class CartPlugin extends AbstractPlugin
             $c->get(PrintService::class),
             $c->get(ShopService::class),
             $c->get(LanguageHelper::class),
+            $c->get(ClientService::class),
         ));
     }
 
