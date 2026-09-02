@@ -11,6 +11,7 @@ enum MarvinTool: string
     case RemoveFromOrder = 'remove_from_order';
     case CheckoutOrder   = 'checkout_order';
     case GetCart   = 'get_cart';
+    case DetectLanguage   = 'detect_language';
 
     // used for system notes in the chat transcript, not for actual Marvin calls
     case IdleReminder   = 'idle_reminder';

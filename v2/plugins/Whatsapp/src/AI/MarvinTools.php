@@ -12,6 +12,7 @@ use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\UsualOrderService;
 use Pmsrapi\V2\Services\CartService;
 use Pmsrapi\V2\Services\MenuService;
+use Pmsrapi\V2\Services\ClientService;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Helpers\JsonHelper;
 use Throwable;
@@ -42,12 +43,16 @@ final class MarvinTools
 
     private ?array $attachment = null;
 
+    /** Set by detectLanguage(); read back via detectedLanguage(). ISO 639-1. */
+    private ?string $detectedLanguage = null;
+
     public function __construct(
         private readonly TrackingService $tracking_service,
         private readonly OrderQueryService $orderService,
         private readonly UsualOrderService $usualOrderService,
         private readonly CartService $cartService,
         private readonly MenuService $menuService,
+        private readonly ClientService $clientService,
         private readonly Logger $logger,
     ) {}
 
@@ -259,9 +264,43 @@ final class MarvinTools
                     'required'   => [],
                 ],
             ],
+            [
+                'name'        => MarvinTool::DetectLanguage->value,
+                'description' =>
+                    'Switch the language you reply in. Call this EVERY SINGLE TIME the shopper '
+                    . 'asks to change language — "let\'s change language", "can you talk in '
+                    . 'Spanish?", "in French please", "habla español", "actually, speak German" — '
+                    . 'with no exceptions: call it again even if they already asked to switch '
+                    . 'earlier in this same conversation, even if you already called this tool '
+                    . 'before, even if you believe you are already replying in the language they '
+                    . 'are naming. Never skip it because you think you already know the answer '
+                    . 'from earlier in the conversation — always call it fresh, on every such '
+                    . 'request, the same way you always call get_usual_for_user fresh. '
+                    . 'Detect the language they are asking FOR, not the language they wrote the '
+                    . 'request in: "can we speak Spanish?" means switch to Spanish even though the '
+                    . 'request is in English. '
+                    . 'Also call this whenever a message arrives in a different language than the '
+                    . 'one you have been replying in, so you switch to match them. '
+                    . 'From your next reply onward, respond entirely in the detected language until '
+                    . 'they ask to switch again.',
+                'input_schema' => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'language' => [
+                            'type'        => 'string',
+                            'pattern'     => '^[a-z]{2}$',
+                            'description' =>
+                                'The language to switch to, as its two-letter ISO 639-1 code '
+                                . '(e.g. "es" for Spanish, "fr" for French, "nl" for Dutch). '
+                                . 'Always the language being switched TO, never the language the '
+                                . 'shopper\'s request was written in.',
+                        ],
+                    ],
+                    'required'   => ['language'],
+                ],
+            ],
         ];
     }
-
 
     /**
      * Run one tool_use block and return the matching tool_result block.
@@ -292,6 +331,7 @@ final class MarvinTools
                 MarvinTool::RemoveFromOrder->value => $this->removeFromOrder($phone, $in),
                 MarvinTool::CheckoutOrder->value   => $this->checkoutOrder($phone),
                 MarvinTool::GetCart->value         => $this->getCart($phone),
+                MarvinTool::DetectLanguage->value  => $this->detectLanguage($in, $phone),
                 default       => throw new ApiException("unknown tool: {$name}"),
             };
 
@@ -493,6 +533,29 @@ final class MarvinTools
             'total' => $full['total'],
             'cart' => $cart,
         ];
+    }
+
+    /**
+     * Record the shopper's requested language for Marvin::reply() to pick up
+     * after the tool loop (see MarvinTools::detectedLanguage()). This does NOT
+     * call attach() — attach() drives the reply "type" the controller's match
+     * dispatches on, and a language switch is not a distinct reply type.
+     */
+    private function detectLanguage(array $input, string $phone): array
+    {
+        $language = strtolower((string) ($input['language'] ?? ''));
+        if (preg_match('/^[a-z]{2}$/', $language) !== 1) {
+            return ['ok' => false, 'reason' => 'invalid_language'];
+        }
+
+        
+        $res = $this->clientService->updateEndClient($phone, ['language' => $language]);
+        
+        $this->detectedLanguage = $language;
+        
+        $this->attach(MarvinTool::DetectLanguage->value, ['language' => $language]);
+
+        return ['ok' => true, 'language' => $language];
     }
 
     /** A line in the cart's items, or null if this phone has no such line. */
@@ -747,9 +810,16 @@ final class MarvinTools
         return $this->attachment;
     }
 
+    /** ISO 639-1 code, if detect_language ran this turn; null otherwise. */
+    public function detectedLanguage(): ?string
+    {
+        return $this->detectedLanguage;
+    }
+
     public function reset(): void
     {
         $this->attachment = null;
+        $this->detectedLanguage = null;
     }
 
     private function attach(string $type, array $data): void

@@ -47,6 +47,10 @@ final class WhatsappController
     private string $clientPhone  = "";
     private ?string $clientName  = "";
 
+    private bool $isNewClient = false;
+
+    private ?string $conversationLanguage = null; //default language;
+
     private array $messagePayload = [];
 
     /** @var array<string, mixed>|null the shop resolved by findShop() for this request */
@@ -97,6 +101,9 @@ final class WhatsappController
         }
         // $this->logger->info("whatsatpp: shop details", $this->shop);
 
+        //get or insert client
+        $this->handleCustomer();
+
         $reply = $this->reply();
 
         return Response::ok([
@@ -124,11 +131,9 @@ final class WhatsappController
             $this->transcripts->load($this->messagePayload["phone_number"]),
             $this->shopInfo(),
             $this->messagePayload["full_name"],
-            language: $this->detectedLanguage(),
+            language: $this->conversationLanguage,
         );
-        
-        // var_dump($reply["type"]);
-        
+
         return match ($reply["type"] ?? '') {
             'text' => $this->sendMarvinText($reply["message"]),
             MarvinTool::TrackOrder->value => $this->sendTrackingLocation($reply),
@@ -139,6 +144,7 @@ final class WhatsappController
             MarvinTool::AddToOrder->value => $this->draftStatus($reply),
             MarvinTool::RemoveFromOrder->value => $this->draftStatus($reply),
             MarvinTool::GetCart->value => $this->sendCartStatus($reply),
+            MarvinTool::DetectLanguage->value => $this->setLanguageAndReply($reply),
             default => ['sent' => false, 'error' => "Marvin returned an unknown reply type: " . ($reply["type"] ?? '')],
         };
     }
@@ -158,7 +164,7 @@ final class WhatsappController
 
         try {
 
-            $this->sendMenuLink($reply["message"], $this->shopLinkWithCheckout());
+            $this->sendMenuLink($reply["message"], $this->shopLink());
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context. Tagged with
@@ -211,6 +217,32 @@ final class WhatsappController
         }
     }
 
+    private function setLanguageAndReply(array $reply) : array
+    {
+        if(!isset($reply["language"]) || empty($reply["language"])){
+            return $this->marvinFallbackReply();
+        }
+
+        $this->conversationLanguage = $reply["language"];
+
+        try{
+            $this->sendMenuLink($reply["message"], $this->shopLinkWithCheckout());
+
+            // Log Marvin's own turn, or he will not see this reply on the next
+            // message and the thread loses all context.
+            $this->transcripts->append($this->messagePayload["phone_number"], $reply["message"], 'out', 'text', MarvinTool::DetectLanguage->value);
+
+            return ['sent' => true];
+        }catch(Exception $ex){
+            $this->logger->error('whatsapp: outbound reply failed', [
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
+                'error' => $ex->getMessage(),
+            ]);
+            return ['sent' => false, 'error' => $ex->getMessage()];
+        }
+    }
+
     private function ctaWithProducts(array $reply) : array
     {
         if( !isset($reply["message"])){
@@ -229,7 +261,7 @@ final class WhatsappController
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
-            $this->transcripts->append($this->messagePayload["phone_number"], $reply["message"], 'out', 'text', MarvinTool::GetUsualForUser->value);
+            $this->transcripts->append($this->messagePayload["phone_number"], $reply["message"], 'out', 'text', MarvinTool::FilterProducts->value);
 
             return ['sent' => true];
         } catch (ApiException $e) {
@@ -290,7 +322,7 @@ final class WhatsappController
             $this->gateway->sendButtons(
                 $this->messagePayload["phone_number"],
                 $reply["message"],
-                $this->getButtonsForReturningUser($this->detectedLanguage()),
+                $this->getButtonsForReturningUser($this->conversationLanguage),
                 $this->messagePayload["conversation_id"]);
             
             // Log Marvin's own turn, or he will not see his previous answers on
@@ -468,7 +500,10 @@ final class WhatsappController
     private function shopLink() : string
     {
         $shopLink = $this->config->secret("cta.shop_link");
-        return rtrim($shopLink, "/") . "/?phonenumber=" . urlencode($this->messagePayload["phone_number"]) . "&shop_id=" . shop_id;
+        return rtrim($shopLink, "/") . "/?phonenumber=" 
+            . urlencode($this->messagePayload["phone_number"]) 
+            . "&shop_id=" . shop_id
+            . "&language=" . $this->conversationLanguage;
     }
 
     /**
@@ -485,11 +520,6 @@ final class WhatsappController
      */
     private function reply(): array
     {
-        $upsertResult = $this->clientService->upsertClient([
-            "phonenumber" => $this->messagePayload["phone_number"],
-            "full_name" => $this->messagePayload["full_name"],
-            "date_added" => date('Y-m-d H:i:s'),
-        ]);
 
         if ($this->messagePayload["message_type"] === "audio") {
             $transcribedText = $this->transcribeInboundAudio();
@@ -510,12 +540,11 @@ final class WhatsappController
 
         $this->conversrationService->upsertConversation($this->messagePayload["phone_number"]);
 
-        if ($this->messagePayload["message_type"] === "location") {
+        if (!$this->isNewClient && $this->messagePayload["message_type"] === "location") {
             return $this->handleLocationReply();
         }
 
-        $this->logger->info("WP Client upsert result", $upsertResult);
-        if ($upsertResult["action"] === "inserted") {
+        if ($this->isNewClient) {
             return $this->handleNewClientReply();
         }
 
@@ -582,7 +611,7 @@ final class WhatsappController
     private function marvinFallbackReply(): array
     {
         return $this->sendText(
-            $this->language->translate('voice_message_fallback', $this->detectedLanguage())
+            $this->language->translate('voice_message_fallback', $this->conversationLanguage)
         );
     }
 
@@ -680,6 +709,9 @@ final class WhatsappController
         if(!isset($body["data"]["contact"])){
             return null;
         }
+        
+        $this->messagePayload["first_name"] = trim((string) ($body["data"]["contact"]["firstName"] ?? ''));
+        $this->messagePayload["last_name"] = trim((string) ($body["data"]["contact"]["lastName"] ?? ''));
 
         $contact = $body["data"]["contact"];
 
@@ -802,28 +834,51 @@ final class WhatsappController
 
     private function sendMenuLink(string $message, string $url, ?string $headerImage = null) : array
     {
-        $language = $this->detectedLanguage();
 
         return $this->gateway->sendLink(
             $this->messagePayload["phone_number"],
             $message,
-            $this->language->translate('open', $language),
+            $this->language->translate('open', $this->conversationLanguage),
             $url,
-            $this->language->translate('open_menu_caption', $language),
+            $this->language->translate('open_menu_caption', $this->conversationLanguage),
             $headerImage,
             $this->messagePayload["conversation_id"]);
     }
 
-    /**
-     * Detected once per phone number (cached — see LanguageHelper) rather than
-     * per message, since this only matters where fixed UI strings (button
-     * labels) are sent; Marvin's own text replies already adapt on their own.
-     */
-    private function detectedLanguage() : string
+    /*
+    *   Get or insert the client in the global clients table, and set the conversation language
+    *   If the conversation is not found in the record, a detection will be performed
+    *   and the global client will be updated with the detected language
+    */
+    private function handleCustomer() : void
     {
-        return $this->language->detect(
+        $clientResult = $this->clientService->getOrInsertGlobalClient(
             $this->messagePayload["phone_number"],
-            $this->messagePayload["message"] ?? '',
-        );
+            [
+                "phonenumber" => $this->messagePayload["phone_number"],
+                "first_name" => $this->messagePayload["first_name"],
+                "last_name" => $this->messagePayload["last_name"],
+                "date_added" => date('Y-m-d H:i:s'),
+            ]);
+
+        $this->isNewClient = $clientResult["action"] === "inserted" ?? false;
+
+        $this->conversationLanguage = $clientResult["record"]["language"];
+        
+        if($this->conversationLanguage === null){
+            //fallback is "en", so no empty results, safe to update global client
+            $this->conversationLanguage = $this->language->detect(
+                $this->messagePayload["phone_number"],
+                $this->messagePayload["message"] ?? '');
+
+            //update the global client language
+            $this->clientService->upsertGlobalClient(
+                $this->messagePayload["phone_number"],
+                [
+                    "language" => $this->conversationLanguage,
+                ]);
+        }
+
     }
+
 }

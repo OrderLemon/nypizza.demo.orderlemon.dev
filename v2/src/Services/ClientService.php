@@ -56,6 +56,17 @@ class ClientService
     }
 
 
+    public function updateEndClient(string $phone, array $data): ?array
+    {
+        $result = $this->repo->upsert(
+            "clients_data",
+            ['phonenumber' => $phone, ...$data],
+            updateColumns: array_keys($data),
+        );
+
+        return $result;
+    }
+
     /**
      * Saves checkout-supplied address/billing details against this phone's
      * client record, creating it if it doesn't exist yet. Only fields present
@@ -214,6 +225,57 @@ class ClientService
             $fields,
             static fn (?string $value): bool => $value !== null && $value !== '',
         );
+    }
+
+    public function getOrInsertGlobalClient(string $phoneNumber, array $data): ?array
+    {
+        $client = $this->getGlobalClient($phoneNumber);
+
+        if ($client === null) {
+            
+            $client = $this->insertGlobalClient($phoneNumber, $data);
+
+            if($client === null){
+                throw new ServiceException("Failed to insert global client for phone: $phoneNumber");
+            }
+
+            $client = $client["record"];
+        }
+
+        //shop clients require full_name
+        $client["full_name"] = trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''));
+        
+        //also insert in the clients_{shop_id} table
+        $upsert = $this->upsertClient($client);
+
+        return ["action" => $upsert["action"], "record" => $client];
+    }
+
+    public function getGlobalClient(string $phoneNumber): ?array
+    {
+        return $this->repo->selectRow('clients_data', [
+            'phonenumber' => $phoneNumber,
+        ]);
+    }
+
+    public function insertGlobalClient(string $phoneNumber, array $data): ?array
+    {
+        $result = $this->repo->upsert('clients_data', [
+            'phonenumber' => $phoneNumber,
+            ...$data,
+        ]);
+
+        return $result;
+    }
+
+    public function upsertGlobalClient(string $phoneNumber, array $data): ?array
+    {
+        $result = $this->repo->upsert('clients_data', [
+            'phonenumber' => $phoneNumber,
+            ...$data,
+        ], updateColumns: array_keys($data));
+
+        return $result;
     }
 }
 

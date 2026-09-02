@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Plugins\Whatsapp;
 
+use Pmsrapi\V2\Cluster\ServiceClient;
 use Pmsrapi\V2\Services\ShopService;
 use Plugins\Whatsapp\Controllers\WhatsappController;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
@@ -57,6 +58,7 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(UsualOrderService::class),
             $c->get(CartService::class),
             $c->get(MenuService::class),
+            $c->get(ClientService::class),
             $c->get(Logger::class)
         ));
  
