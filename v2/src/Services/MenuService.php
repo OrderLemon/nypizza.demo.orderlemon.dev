@@ -294,6 +294,86 @@ final class MenuService
         return $this->campaignService->activeNow($this->campaignsRaw ?? []);
     }
 
+    // ------------------------------------------------------------ prompt view
+
+    /**
+     * Products narrowed to what Marvin actually reads in his prompt. Drops
+     * fields that are redundant (brand repeats identically on every
+     * product), derivable 
+     */
+    public function promptProducts(): array
+    {
+        return array_map($this->promptProduct(...), array_values($this->index()));
+    }
+
+    /**
+     * Active campaigns narrowed the same way.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function promptCampaigns(): array
+    {
+        return array_map($this->promptCampaign(...), $this->campaigns());
+    }
+
+    /**
+     * @param array<string,mixed> $product
+     * @return array<string,mixed>
+     */
+    private function promptProduct(array $product): array
+    {
+        return array_filter([
+            'id'            => $product['id'] ?? null,
+            'category_id'   => $product['category_id'] ?? null,
+            'name'          => $product['name'] ?? null,
+            'description'   => $product['description'] ?? null,
+            'price'         => $product['price'] ?? null,
+            'old_price'     => $product['old_price'] ?? null,
+            'stock'         => $product['stock'] ?? null,
+            'unit'          => $product['unit'] ?? null,
+            'specs'         => $product['specs'] ?? null,
+            'config_groups' => $product['config_groups'] ?? null,
+            'deal'          => !empty($product['combo_groups']),
+            'tags'          => $this->activeTags($product['tags'] ?? null),
+        ], static fn(mixed $v): bool => $v !== null && $v !== [] && $v !== false);
+    }
+
+    /**
+     * @param array<string,mixed> $campaign
+     * @return array<string,mixed>
+     */
+    private function promptCampaign(array $campaign): array
+    {
+        return array_filter([
+            'id'            => $campaign['id'] ?? null,
+            'name'          => $campaign['name'] ?? null,
+            'description'   => $campaign['description'] ?? null,
+            'price'         => $campaign['price'] ?? null,
+            'old_price'     => $campaign['old_price'] ?? null,
+            'specs'         => $campaign['specs'] ?? null,
+            'combo_groups'  => $campaign['combo_groups'] ?? null,
+            'tags'          => $this->activeTags($campaign['tags'] ?? null),
+        ], static fn(mixed $v): bool => $v !== null && $v !== []);
+    }
+
+    /**
+     * {"popular":true,"bestSeller":false,...} -> ["popular"]. Same
+     * information, without spelling out every tag that does not apply.
+     *
+     * @return list<string>
+     */
+    private function activeTags(mixed $tags): array
+    {
+        if (!is_array($tags)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_keys($tags),
+            static fn(int|string $tag): bool => ($tags[$tag] ?? false) === true,
+        ));
+    }
+
     /**
      * Decode menu.json, or an empty array when it doesn't exist yet or is
      * blank. A file that exists but contains invalid JSON is a real error,

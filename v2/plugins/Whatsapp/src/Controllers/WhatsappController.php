@@ -275,16 +275,15 @@ final class WhatsappController
         }
     }
 
+    /*
+    *   Whenever a returning user greets Marvin, 
+    *   he will respond with a greeting and a set of buttons to choose from.
+    *   This function will send the greeting and the buttons to the user.
+    */
     private function greetWithUsual(array $reply) : array
     {
         if( !isset($reply["message"]) || !isset($reply["order_history"])){
             throw new ApiException("Marvin did not return a message or order history to send!");
-        }
-
-        //no order history, just send the text message
-        //TO DO: needs fix, marvin should not return a message with no order, but if it does, we just send the text
-        if(is_array($reply["order_history"]) && count($reply["order_history"]) === 0){
-            return $this->sendMarvinText($reply["message"]);
         }
 
         try {

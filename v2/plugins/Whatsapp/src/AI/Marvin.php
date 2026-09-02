@@ -362,9 +362,9 @@ final class Marvin
      */
     private function menuJson(): string
     {
-        $menu = $this->menuService->index();
+        $products = $this->menuService->promptProducts();
 
-        if ($menu === []) {
+        if ($products === []) {
             throw new ApiException(
                 'Marvin has an empty menu — check the "menu" key in ' . $this->configPath()
             );
@@ -372,8 +372,8 @@ final class Marvin
 
         return json_encode(
             [
-                'products'  => $menu,
-                'campaigns' => $this->menuService->campaigns(),
+                'products'  => $products,
+                'campaigns' => $this->menuService->promptCampaigns(),
             ],
             JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
         );
