@@ -867,7 +867,7 @@ final class WhatsappController
     private function sendMenuLink(string $message, string $url, ?string $headerImage = null) : array
     {
 
-        return $this->gateway->sendLink(
+    return $this->gateway->sendLink(
             $this->messagePayload["phone_number"],
             $message,
             $this->language->translate('open', $this->conversationLanguage),

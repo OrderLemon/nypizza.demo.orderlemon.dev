@@ -223,7 +223,12 @@ final class CartController
                 'text',
                 MarvinTool::OrderLost->value,
             );
-            $this->whatsappGateway->sendText($phone, $this->language->translate('order_lost', $language));
+
+            $supps = $this->config->secret("support");
+
+            [$support1, $support2] = array_values($supps);
+
+            $this->whatsappGateway->sendText($phone, $this->language->translate('order_lost', $language, ["support_1" => $support1, "support_2" => $support2]));
             return true;
         }catch(\Exception $ex){
             $this->logger->error("whatsapp: order lost", ["error" => $ex->getMessage()]);
