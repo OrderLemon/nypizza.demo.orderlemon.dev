@@ -58,12 +58,12 @@ final class LanguageHelper
             'fr' => "Désolé, je n'ai pas compris ce message vocal. Pourriez-vous plutôt l'écrire ?",
         ],
         'marvin_fallback' => [
-            'en' => "Sorry, I can't help you right now. A colleague will help you further: https://wa.me/ruvenss or https://wa.me/diederick",
-            'nl' => 'Sorry, ik kan je nu niet verder helpen. Een collega helpt je graag verder: https://wa.me/ruvenss of https://wa.me/diederick',
-            'tr' => 'Üzgünüm, şu anda sana yardımcı olamıyorum. Bir meslektaşım sana yardımcı olacak: https://wa.me/ruvenss veya https://wa.me/diederick',
-            'es' => 'Lo siento, no puedo ayudarte en este momento. Un compañero te ayudará: https://wa.me/ruvenss o https://wa.me/diederick',
-            'de' => 'Entschuldigung, ich kann dir gerade nicht weiterhelfen. Ein Kollege wird dir weiterhelfen: https://wa.me/ruvenss oder https://wa.me/diederick',
-            'fr' => "Désolé, je ne peux pas t'aider pour le moment. Un collègue t'aidera : https://wa.me/ruvenss ou https://wa.me/diederick",
+            'en' => "Sorry, I can't help you right now. A colleague will help you further: {{SUPPORT_1}} or {{SUPPORT_2}}",
+            'nl' => 'Sorry, ik kan je nu niet verder helpen. Een collega helpt je graag verder: {{SUPPORT_1}} of {{SUPPORT_2}}',
+            'tr' => 'Üzgünüm, şu anda sana yardımcı olamıyorum. Bir meslektaşım sana yardımcı olacak: {{SUPPORT_1}} veya {{SUPPORT_2}}',
+            'es' => 'Lo siento, no puedo ayudarte en este momento. Un compañero te ayudará: {{SUPPORT_1}} o {{SUPPORT_2}}',
+            'de' => 'Entschuldigung, ich kann dir gerade nicht weiterhelfen. Ein Kollege wird dir weiterhelfen: {{SUPPORT_1}} oder {{SUPPORT_2}}',
+            'fr' => "Désolé, je ne peux pas t'aider pour le moment. Un collègue t'aidera : {{SUPPORT_1}} ou {{SUPPORT_2}}",
         ],
         'track_order' => [
             'en' => 'Track my order',
@@ -74,12 +74,12 @@ final class LanguageHelper
             'fr' => 'Suivre ma commande',
         ],
         'order_lost' => [
-            'en' => 'Your order got lost. Please contact our team: https://wa.me/ruvenss',
-            'nl' => 'Je bestelling is helaas kwijtgeraakt. Neem contact op met ons team: https://wa.me/ruvenss',
-            'tr' => 'Siparişiniz kayboldu. Lütfen ekibimizle iletişime geçin: https://wa.me/ruvenss',
-            'es' => 'Tu pedido se ha perdido. Por favor, contacta con nuestro equipo: https://wa.me/ruvenss',
-            'de' => 'Deine Bestellung ist leider verloren gegangen. Bitte kontaktiere unser Team: https://wa.me/ruvenss',
-            'fr' => 'Votre commande a été perdue. Veuillez contacter notre équipe : https://wa.me/ruvenss',
+            'en' => 'Your order got lost. Please contact our team: {{SUPPORT_1}} or {{SUPPORT_2}}',
+            'nl' => 'Je bestelling is helaas kwijtgeraakt. Neem contact op met ons team: {{SUPPORT_1}} of {{SUPPORT_2}}',
+            'tr' => 'Siparişiniz kayboldu. Lütfen ekibimizle iletişime geçin: {{SUPPORT_1}} veya{{SUPPORT_2}}',
+            'es' => 'Tu pedido se ha perdido. Por favor, contacta con nuestro equipo: {{SUPPORT_1}} o {{SUPPORT_2}}',
+            'de' => 'Deine Bestellung ist leider verloren gegangen. Bitte kontaktiere unser Team: {{SUPPORT_1}} oder {{SUPPORT_2}}',
+            'fr' => 'Votre commande a été perdue. Veuillez contacter notre équipe : {{SUPPORT_1}} ou {{SUPPORT_2}}',
         ],
         'open' => [
             'en' => 'OPEN',
@@ -160,7 +160,6 @@ final class LanguageHelper
             $text = str_replace('{{' . strtoupper($name) . '}}', (string) $value, $text);
         }
 
-  
         return $text;
     }
 

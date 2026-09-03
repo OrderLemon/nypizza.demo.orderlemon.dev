@@ -450,12 +450,16 @@ final class Marvin
     private function fallback(): string
     {
         $override = $this->setting('fallback', null);
+        
+        $supps = $this->config->secret("support");
+
+        [$support1, $support2] = array_values($supps);
 
         if (is_string($override) && trim($override) !== '') {
             return $override;
         }
 
-        return $this->language->translate('marvin_fallback', $this->replyLanguage);
+        return $this->language->translate('marvin_fallback', $this->replyLanguage, ["support_1" => $support1, "support_2" => $support2]);
     }
 
     // ------------------------------------------------------------- history

@@ -82,17 +82,21 @@ class ClientService
      */
     public function upsertFromCheckout(string $phone, array $details): ?array
     {
+        
         //upsert the shop client
         $result = $this->repo->upsert(
             $this->clientsTable(),
             [...$details, 'phonenumber' => $phone],
-            ["street","city","country","box","state","zip"]);
+            ["street","city","country","box","state","cp"]);
+            
+        
+        $details["cp"] = $details["zip"] ?? null; // zip is the shop clients table, cp is the global clients_data table
 
         //upsert the global client
         $this->repo->upsert(
             "clients_data",
             [...$details, 'phonenumber' => $phone],
-            ["street","city","country","box","state","zip"]);
+            ["street","city","country","box","state","cp"]);
 
         return $result['record'];
     }
@@ -245,7 +249,8 @@ class ClientService
         
         //shop clients require full_name
         $client["full_name"] = trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''));
-        
+        $client["zip"] = $client["cp"] ?? null;
+
         //also insert in the clients_{shop_id} table
         $upsert = $this->upsertClient($client);
 
