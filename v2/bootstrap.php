@@ -269,7 +269,7 @@ $container->singleton(PrintService::class, static fn(Container $c): PrintService
 ));
 
 $container->singleton(UsualOrderService::class, static fn(Container $c): UsualOrderService => new UsualOrderService(
-    $c->get(Repository::class),
+    $c->get(OrderQueryService::class),
     $c->get(Logger::class)
 ));
 $container->singleton(ChatTranscriptService::class, static fn(Container $c): ChatTranscriptService => new ChatTranscriptService(

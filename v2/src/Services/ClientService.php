@@ -45,7 +45,6 @@ class ClientService
             $address = $this->getClientAddress($data["latitude"], $data["longitude"]);
             $data = [...$data, ...$address];
         }
-
         $result = $this->repo->upsert(
             $this->clientsTable(),
             $data,
@@ -87,13 +86,13 @@ class ClientService
         $result = $this->repo->upsert(
             $this->clientsTable(),
             [...$details, 'phonenumber' => $phone],
-            ["street","city","country","box","state"]);
+            ["street","city","country","box","state","zip"]);
 
         //upsert the global client
         $this->repo->upsert(
             "clients_data",
             [...$details, 'phonenumber' => $phone],
-            ["street","city","country","box","state"]);
+            ["street","city","country","box","state","zip"]);
 
         return $result['record'];
     }
