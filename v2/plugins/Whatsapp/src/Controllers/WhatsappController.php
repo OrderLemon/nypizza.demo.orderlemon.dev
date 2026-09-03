@@ -139,6 +139,7 @@ final class WhatsappController
             MarvinTool::TrackOrder->value => $this->sendTrackingLocation($reply),
             MarvinTool::GreetWithUsual->value => $this->greetWithUsual($reply),
             MarvinTool::GetUsualForUser->value => $this->ctaWithUsualOrder($reply),
+            MarvinTool::GetLastOrder->value => $this->ctaWithLastOrder($reply),
             MarvinTool::FilterProducts->value => $this->ctaWithProducts($reply),
             MarvinTool::CheckoutOrder->value => $this->draftStatus($reply),
             MarvinTool::AddToOrder->value => $this->draftStatus($reply),
@@ -307,8 +308,39 @@ final class WhatsappController
         }
     }
 
+    private function ctaWithLastOrder(array $reply) : array
+    {
+        if( !isset($reply["message"]) || !isset($reply["order"])){
+            throw new ApiException("Marvin did not return a message or order history to send!");
+        }
+
+        //no order history, just send the text message
+        if(is_array($reply["order"]) && count($reply["order"]) === 0){
+            return $this->sendMarvinText($reply["message"]);
+        }
+
+        try {
+
+            $this->sendMenuLink($reply["message"], $this->shopLinkWithUsualOrder($reply["order"]["hash"]));
+
+            // Log Marvin's own turn, or he will not see his previous answers on
+            // the next message and the thread loses all context.
+            $this->transcripts->append($this->messagePayload["phone_number"], $reply["message"], 'out', 'text', MarvinTool::GetLastOrder->value);
+
+            return ['sent' => true];
+        } catch (ApiException $e) {
+            $this->logger->error('whatsapp: outbound reply failed', [
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => "",
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['sent' => false, 'error' => $e->getMessage()];
+        }
+    }
+
     /*
-    *   Whenever a returning user greets Marvin, 
+    *   Whenever a returning user greets Marvin,
     *   he will respond with a greeting and a set of buttons to choose from.
     *   This function will send the greeting and the buttons to the user.
     */

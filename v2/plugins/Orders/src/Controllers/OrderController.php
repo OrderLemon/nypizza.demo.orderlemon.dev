@@ -51,6 +51,7 @@ final class OrderController
         return Response::ok($draft);
     }
 
+    // Test endpoint. Not used in the app. Can be used to test the usual order service.
     public function usualFor(Request $request, $phone) : Response
     {
         if(empty($phone) || !is_numeric($phone)){
@@ -72,7 +73,7 @@ final class OrderController
             throw new ValidationException(["Invalid data" => "Provided phone is invalid!"]);
         }
 
-        $orders = $this->queryService->loadForPhone($phone);
+        $orders = $this->queryService->activeOrdersFor($phone);
 
         if(empty($orders)){
             return Response::ok(["status" => "success", "message" => "No active orders found.", "orders" => []]);
@@ -118,5 +119,6 @@ final class OrderController
 
         return Response::ok(["items" => $items]);
     }
+
 }
 ?>

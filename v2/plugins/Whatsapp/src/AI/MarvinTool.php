@@ -5,6 +5,7 @@ enum MarvinTool: string
 {
     case TrackOrder      = 'track_order';
     case GetUsualForUser = 'get_usual_for_user';
+    case GetLastOrder    = 'get_last_order';
     case GreetWithUsual         = 'greet_with_usual';
     case FilterProducts         = 'filter_products';
     case AddToOrder      = 'add_to_order';

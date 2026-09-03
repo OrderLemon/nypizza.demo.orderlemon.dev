@@ -114,6 +114,34 @@ final class MarvinTools
                     'required'   => [],
                 ],
             ],
+            [   'name'        => MarvinTool::GetLastOrder->value,
+                'description' =>
+                    'Look up the shopper\'s single most recent order — whichever one was placed '
+                    . 'last, regardless of how often they order it — and attach a link that '
+                    . 'reorders it in one tap. Use this for "what did I order last time", "my '
+                    . 'previous order", "my last order details", or similar, when they want that '
+                    . 'ONE specific order rather than their usual pick. get_usual_for_user is the '
+                    . 'right tool instead when they say "the usual" or ask what they order most — '
+                    . 'this one never weighs frequency, only recency. '
+                    . 'Call it fresh every time, never from earlier conversation history. '
+                    . 'If that most recent order is still in progress (returns active=true), it '
+                    . 'has not been eaten yet: say it is still being prepared/on its way rather '
+                    . 'than describing it as a past order, and mention its pickup/delivery details '
+                    . 'and timing from the result. For a track_order-style live ETA and courier '
+                    . 'position, call track_order instead — this tool only reports what is on file, '
+                    . 'not a moving location. '
+                    . 'The link is attached to your reply automatically and it is the whole '
+                    . 'action. Just describe the order and say they can tap the link to order it '
+                    . 'again. Do not ask whether to add it to their basket, do not call '
+                    . 'add_to_order for it, and do not write a link yourself. '
+                    . 'Returns found 0 when the shopper has no order history — then say you have '
+                    . 'nothing on record for them and point them to the menu.',
+                'input_schema' => [
+                    'type'       => 'object',
+                    'properties' => new \stdClass(),
+                    'required'   => [],
+                ],
+            ],
             [
                 'name'        => MarvinTool::GreetWithUsual->value,
                 'description' =>
@@ -331,6 +359,7 @@ final class MarvinTools
                 MarvinTool::TrackOrder->value => $this->trackOrder($in, $phone),
                 MarvinTool::GreetWithUsual->value => $this->greetWithUsual($phone),
                 MarvinTool::GetUsualForUser->value => $this->getUsualForUser($phone),
+                MarvinTool::GetLastOrder->value    => $this->getLastOrder($phone),
                 MarvinTool::FilterProducts->value => $this->filterProducts($phone, $in),
                 MarvinTool::AddToOrder->value      => $this->addToOrder($phone, $in),
                 MarvinTool::RemoveFromOrder->value => $this->removeFromOrder($phone, $in),
@@ -635,7 +664,7 @@ final class MarvinTools
             return ['order_history' => 0];
         }
 
-        $orderHistory = $this->orderService->loadForPhone($phone);
+        $orderHistory = $this->orderService->activeOrdersFor($phone);
         
         $this->attach(MarvinTool::GreetWithUsual->value, ["order_history" => $orderHistory]);
 
@@ -692,6 +721,61 @@ final class MarvinTools
             'status' => (string) ($order['status'] ?? 'pending'),
         ];
     }
+
+    /**
+     * The shopper's single most recent order, wherever it lives: still in
+     * `orders_active_*` (not yet eaten — Marvin must say so) or, failing
+     * that, the newest one in `orders_archive_*`. Unlike get_usual_for_user
+     * this never weighs repetition, only recency.
+     */
+    private function getLastOrder(string $phone): array
+    {
+        if (trim($phone) === '') {
+            $this->logger->error('marvin.get_last_order called without a phone', []);
+
+            return ['found' => 0];
+        }
+
+        // Look for an active, ORDERED, order first, because if it is still in progress it has not been eaten yet and Marvin must say so.
+        // If there is no active order, fall back to the last one in the archive order history.
+        $last = $this->orderService->lastFor($phone);
+
+        //check archived
+        if ($last === null) {
+            $last = $this->orderService->lastFor($phone, true);
+        }
+
+        if ($last === null) {
+            return ['found' => 0];
+        }
+
+        $this->attach(MarvinTool::GetLastOrder->value, ['order' => $last]);
+
+        return [
+            'found'       => 1,
+            'active'      => false,
+            'order_id'    => $last['source_order_id'],
+            'status'      => (string) ($last['status'] ?? 'delivered'),
+            'summary'     => $last['summary'],
+            'total'       => $last['total'],
+            'logistics'   => $last['logistics_label'] ?? null,
+            'pickup_time' => $last['pick_up_time'] ?? null,
+            'address'     => $this->formatAddress($last),
+            'ordered_at'  => $last['ordered_time'] ?? null,
+        ];
+    }
+
+    /** "street, zip city" from an order row, skipping blank parts — pickup/delivery has no map pin here. */
+    private function formatAddress(array $order): ?string
+    {
+        $parts = array_filter(
+            [$order['street'] ?? null, $order['zip'] ?? null, $order['city'] ?? null],
+            static fn(mixed $part): bool => is_string($part) && trim($part) !== '',
+        );
+
+        return $parts === [] ? null : implode(', ', $parts);
+    }
+
     // ---------------------------------------------------------- track_order
 
     /**

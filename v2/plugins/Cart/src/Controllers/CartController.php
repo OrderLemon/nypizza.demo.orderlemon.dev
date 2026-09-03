@@ -107,19 +107,19 @@ final class CartController
         $ticketUrl = $this->queryService->createTicket($order["id"]);
 
         
-        // if($ticketUrl === null){
-        //     $this->sendOrderLostMessage($body["phonenumber"]);
-        //     //send order lost message
-        //     return Response::Ok(
-        //         [
-        //             "status" => "failure",
-        //             "message" => "Order was created but the ticked could not be generated!",
-        //             "data" => ["order_id" => $order["id"]]
-        //         ]);
-        // }
+        if($ticketUrl === null){
+            $this->sendOrderLostMessage($body["phonenumber"]);
+            //send order lost message
+            return Response::Ok(
+                [
+                    "status" => "failure",
+                    "message" => "Order was created but the ticked could not be generated!",
+                    "data" => ["order_id" => $order["id"]]
+                ]);
+        }
 
         // currently using order time for pickup time
-        // $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
+        $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
 
         $this->sendThankYouMessage($body["phonenumber"]);
 

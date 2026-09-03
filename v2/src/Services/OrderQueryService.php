@@ -8,8 +8,7 @@ use DateTimeImmutable;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Exception\ApiException;
-use Pmsrapi\V2\Exception\ValidationException;
-use Pmsrapi\V2\Helpers\CustomerHelper;
+use Pmsrapi\V2\Orders\OrderBasket;
 use Pmsrapi\V2\Orders\OrderStatus;
 use Pmsrapi\V2\Support\Logger;
 
@@ -23,6 +22,12 @@ final class OrderQueryService
 
     private const int CANCELLED_STATUS_ID = 8;
     private const string CANCELLED_STATUS_LABEL = 'cancelled';
+
+    /** Orders that were never actually fulfilled don't count as a real "last order". */
+    public const array UNCOUNTED_STATUS_IDS = [7, 8];
+
+    /** How many recent archived orders lastFor() scans before giving up (in case the newest are discount-only). */
+    private const int LAST_ORDER_LOOKBACK = 5;
 
     public function __construct(
         private readonly Repository $repo,
@@ -40,37 +45,97 @@ final class OrderQueryService
         return $this->allOrders();
     }
 
-    /** This phone's orders for the configured shop, most recent first. */
-    public function loadForPhone(string $phone): array
-    {
-        return $this->ordersForPhone($phone);
-    }
-
     /**
-     * This shopper's non-terminal orders, most recent first.
+     * This shopper's orders in ONE table — active or archive — items
+     * attached, most recent first. $filters are extra equality constraints
+     * layered on top of the phone match (e.g. ['status_id' => 2]). Raw: no
+     * status filtering, no window cap — callers with a business rule about
+     * which orders "count" (the usual, last order, …) apply it on top.
      *
      * @return list<array<string,mixed>>
      */
-    public function activeOrdersFor(string $phone): array
+    public function ordersFor(string $phone, bool $archived = false, array $filters = []): array
     {
-        $orders = array_values(array_filter(
-            $this->ordersForPhone($phone),
-            fn(array $order): bool => !$this->statusOf($order)->isTerminal(),
-        ));
+        $shopId = $this->shopId();
 
-        $this->logger->info('orders.activeOrdersFor', [
-            'phone'  => $phone,
-            'found'  => count($orders),
-            'orders' => array_map(
-                fn(array $o): array => [
-                    'order_id' => (int) ($o['id'] ?? 0),
-                    'status'   => $this->statusOf($o)->value,
-                ],
-                $orders
-            ),
-        ]);
+        try {
+            $orders = $this->repo->selectRows(
+                $this->table('orders', $shopId, $archived),
+                ['phonenumber' => $phone, ...$filters],
+                'ordered_time:desc',
+            );
+        } catch (ApiException $e) {
+            $this->logger->error('orders.ordersFor failed: ' . $e->getMessage());
 
-        return $orders;
+            return [];
+        }
+
+        return $this->withItems($orders, $shopId, $archived);
+    }
+
+    /**
+     * This shopper's non-terminal ACTIVE orders, most recent first.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function activeOrdersFor(string $phone, array $filters = []): array
+    {
+        return $this->ordersFor($phone, archived: false, filters: $filters);
+    }
+
+    /**
+     * This shopper's chronologically LAST archived order — whichever one is
+     * newest, ordered once or not (unlike a frequency-ranked "usual"). Falls
+     * through to older orders only when the newest ones turn out to be
+     * nothing but discount lines or a never-fulfilled status.
+     *
+     * @return array{
+     *   source_order_id: int,
+     *   hash: string,
+     *   summary: string,
+     *   items: list<array<string,mixed>>,
+     *   total: float,
+     *   ordered_time: mixed,
+     *   logistics_label: mixed,
+     *   pick_up_time: mixed,
+     *   street: mixed,
+     *   city: mixed,
+     *   zip: mixed,
+     *   status: mixed
+     * }|null
+     */
+    public function lastFor(string $phone, bool $archived = false): ?array
+    {
+        $candidates = array_slice(
+            array_values(array_filter(
+                $this->ordersFor($phone, archived: $archived),
+                static fn(array $order): bool => !in_array((int) ($order['status_id'] ?? 0), self::UNCOUNTED_STATUS_IDS, true),
+            )),
+            0,
+            self::LAST_ORDER_LOOKBACK,
+        );
+
+        foreach ($candidates as $order) {
+            $payload = OrderBasket::reorderPayload($order);
+
+            if ($payload === null) {
+                continue;   // nothing but discount lines
+            }
+
+            return [
+                ...$payload,
+                'source_order_id' => (int) ($order['id'] ?? 0),
+                'ordered_time'    => $order['ordered_time'] ?? null,
+                'logistics_label' => $order['logistics_label'] ?? null,
+                'pick_up_time'    => $order['pick_up_time'] ?? null,
+                'street'          => $order['street'] ?? null,
+                'city'            => $order['city'] ?? null,
+                'zip'             => $order['zip'] ?? null,
+                'status'          => $order['status_label'] ?? ($order['status'] ?? null),
+            ];
+        }
+
+        return null;
     }
 
     /** Finds an order for the configured shop by id, items attached, or null if it doesn't exist. */
@@ -124,11 +189,11 @@ final class OrderQueryService
         }
 
         foreach ($this->repo->selectRows($itemsTable, ['order_id' => $orderId]) as $item) {
-            $this->repo->insertRow($this->archiveTable('order_items', $shopId), $item);
+            $this->repo->insertRow($this->table('order_items', $shopId, archived: true), $item);
             $this->repo->deleteById($itemsTable, (int) $item['id']);
         }
 
-        $this->repo->insertRow($this->archiveTable('orders', $shopId), $order);
+        $this->repo->insertRow($this->table('orders', $shopId, archived: true), $order);
         $this->repo->deleteById($ordersTable, $orderId);
 
         return true;
@@ -335,17 +400,13 @@ final class OrderQueryService
         return (int) shop_id;
     }
 
-    private function table(string $tablePrefix, int $shopId): string
+    /** The active or archived table for a given prefix ("orders", "order_items") — the one place that decides between them. */
+    private function table(string $tablePrefix, int $shopId, bool $archived = false): string
     {
-        return $tablePrefix . '_active_' . $shopId;
+        return $tablePrefix . ($archived ? '_archive_' : '_active_') . $shopId;
     }
 
-    private function archiveTable(string $tablePrefix, int $shopId): string
-    {
-        return $tablePrefix . '_archive_' . $shopId;
-    }
-
-    /** Every order for the configured shop, items attached. */
+    /** Every ACTIVE order for the configured shop, items attached. */
     private function allOrders(): array
     {
         $shopId = $this->shopId();
@@ -359,28 +420,6 @@ final class OrderQueryService
         }
     }
 
-    /**
-     * This shopper's orders for the configured shop, most recent first.
-     *
-     * @return list<array<string,mixed>>
-     */
-    private function ordersForPhone(string $phone): array
-    {
-        $orders = array_values(array_filter(
-            $this->allOrders(),
-            static fn(array $order): bool => CustomerHelper::samePhone((string) ($order['phonenumber'] ?? ''), $phone),
-        ));
-
-        usort(
-            $orders,
-            static fn(array $a, array $b): int => strcmp(
-                (string) ($b['ordered_time'] ?? ''),
-                (string) ($a['ordered_time'] ?? ''),
-            ),
-        );
-
-        return $orders;
-    }
 
     /**
      * Attaches each order's items in one extra query rather than one per order.
@@ -388,7 +427,7 @@ final class OrderQueryService
      * @param list<array<string,mixed>> $orders
      * @return list<array<string,mixed>>
      */
-    private function withItems(array $orders, int $shopId): array
+    private function withItems(array $orders, int $shopId, bool $archived = false): array
     {
         if ($orders === []) {
             return [];
@@ -396,7 +435,7 @@ final class OrderQueryService
 
         $itemsByOrderId = [];
 
-        foreach ($this->repo->selectRows($this->table('order_items', $shopId)) as $item) {
+        foreach ($this->repo->selectRows($this->table('order_items', $shopId, $archived)) as $item) {
             $itemsByOrderId[$item['order_id']][] = $item;
         }
 
@@ -416,4 +455,6 @@ final class OrderQueryService
     {
         return OrderStatus::fromMixed(strtolower((string) ($order['status_label'] ?? '')));
     }
+
+
 }
