@@ -8,6 +8,7 @@ use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\NotFoundException;
+use Pmsrapi\V2\Exception\ServiceException;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Support\Logger;
 
@@ -25,6 +26,11 @@ final class CartService
     private const int CHECKED_OUT_STATUS_ID = 2;
 
     private const int DELIVERY_LOGISTIC_TYPE = 2;
+
+    // Same figures ShopController::present() reports to the client — delivery
+    // is free once the cart's items_total clears the threshold.
+    private const float DELIVERY_FEE = 2.5;
+    private const float FREE_DELIVERY_THRESHOLD = 25.0;
 
     private const array ADDRESS_FIELDS = ['country', 'state', 'city', 'zip', 'street', 'box'];
 
@@ -78,7 +84,7 @@ final class CartService
     }
 
     /** Applies each item's quantity change and returns the refreshed cart. */
-    public function updateCart(array $items, string $phoneNumber): array
+    public function updateCart(array $items, string $phoneNumber, int $logistics = 1): array
     {
         $order = $this->activeOrderFor($phoneNumber);
         $orderId = $order !== null ? (int) $order['id'] : null;
@@ -91,6 +97,18 @@ final class CartService
 
         if ($orderId === null) {
             throw new NotFoundException('No active cart for this phone number');
+        }
+
+        $order["logistics_type"] = $logistics;
+
+        //TO-DO: send the order as apram to withItemsAndTotal
+        $orderUpdated = $this->repo->updateById($this->ordersTable(),
+            $orderId,
+            $order,
+        );
+
+        if($orderUpdated < 0 ){
+            throw new ServiceException('Could not update order logistiscs!');
         }
 
         return $this->withItemsAndTotal($orderId, $changes);
@@ -336,14 +354,6 @@ final class CartService
             $items,
         );
 
-        $total = array_reduce(
-            $items,
-            static fn(float $carry, array $item): float => $carry + ((float) $item['unit_price'] * (float) $item['quantity']),
-            0.0,
-        );
-
-        $this->repo->updateById($ordersTable, $orderId, ['total' => round($total, 2), "display_currency_total" => $total]);
-
         $order = $this->repo->selectRow($ordersTable, ['id' => $orderId]);
 
         if ($order === null) {
@@ -351,6 +361,9 @@ final class CartService
         }
 
         $order['items'] = $nestConfigs ? $this->nestConfigs($items) : $items;
+        $order['totals'] = $this->computeTotals($items, (int) ($order['logistics_type'] ?? 1));
+
+        $this->repo->updateById($ordersTable, $orderId, ['total' => round($order['totals']["total"], 2), "display_currency_total" => $order['totals']["total"]]);
 
         if(!$includeChanges){
             return $order;
@@ -366,6 +379,56 @@ final class CartService
         ));
 
         return $order;
+    }
+
+    /**
+     * Breaks the cart's flat items_total down into a receipt-style figure
+     * block. There's no list/original-price column on order_items_active_{shop}
+     * to diff a campaign discount against, so "savings" is always 0 and
+     * "subtotal" mirrors "items_total" until that data exists — both are
+     * reported anyway so the response shape is stable for the client. Every
+     * line's unit_price is VAT-inclusive, so "tax" is the portion already
+     * embedded in items_total (extracted, not added again); only delivery_fee
+     * is added on top to produce "total". delivery_fee only ever applies to a
+     * delivery order (logistics_type === self::DELIVERY_LOGISTIC_TYPE) — a
+     * pickup order, or one whose logistics_type isn't set yet, never gets one.
+     *
+     * @param list<array<string, mixed>> $items flat rows, as loaded above
+     * @return array{subtotal: float, savings: float, items_total: float, delivery_fee: float, tax: float, total: float}
+     */
+    private function computeTotals(array $items, int $logisticsType): array
+    {
+        
+        $itemsTotal = array_reduce(
+            $items,
+            static fn(float $carry, array $item): float => $carry + ((float) $item['unit_price'] * (float) $item['quantity']),
+            0.0,
+        );
+
+
+        $tax = array_reduce(
+            $items,
+            static function (float $carry, array $item): float {
+                $lineTotal = (float) $item['unit_price'] * (float) $item['quantity'];
+                $vatRate = (float) $item['vat_percentage'] / 100;
+
+                return $carry + ($vatRate > 0 ? $lineTotal - $lineTotal / (1 + $vatRate) : 0.0);
+            },
+            0.0,
+        );
+
+        $isDelivery = $logisticsType === self::DELIVERY_LOGISTIC_TYPE;
+        $deliveryFee = $isDelivery && $itemsTotal <= self::FREE_DELIVERY_THRESHOLD ? self::DELIVERY_FEE : 0.0;
+        $itemsTotal = round($itemsTotal, 2);
+
+        return [
+            'subtotal'     => $itemsTotal,
+            'savings'      => 0.0,
+            'items_total'  => $itemsTotal,
+            'delivery_fee' => $deliveryFee,
+            'tax'          => round($tax, 2),
+            'total'        => round($itemsTotal + $deliveryFee, 2),
+        ];
     }
 
     /**

@@ -58,6 +58,10 @@ final class ShopController
             'enabled' => $shop['enabled'],
             "min_pickup_minutes" => 20,
             "min_delivery_minutes" => 45,
+            "currency" => "EUR",
+            "default_vat_rate" => 0.06,
+            "delivery_fee" => 2.5,
+            "free_delivery_threshold" => 25
         ];
     }
 }
