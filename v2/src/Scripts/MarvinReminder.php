@@ -3,29 +3,41 @@
 declare(strict_types=1);
 
 /**
- * CLI script — nudge shoppers who went quiet on Marvin.
+ * CLI script — nudge shoppers who went quiet on Marvin, for ONE shop.
  *
- * Meant to run every minute (cron). For every shop in SHOPS it scans
- * local_resources.conversations.path/{{shop_id}}/*.json directly — one file
- * per phone number, the same transcript format ChatTranscriptService reads
- * and writes (see that class' docblock). It does NOT go through
- * ChatTranscriptService for the read/list step because that service resolves
- * its path from the request-scoped "shop_id" constant and only knows how to
- * load a single phone at a time; this script needs every file for a shop it
- * does not yet have identities for. Same rationale as the shop-id-parameterised
- * loadTranscript() this replaced in the old Conversations.php archiver.
+ * Takes a required shop_id argument and handles only that shop. It defines
+ * the request-scoped "shop_id" constant once, up front — the same constant
+ * ChatTranscriptService and Marvin.php read — which only works because this
+ * process now ever handles exactly one shop. A constant can't be redefined,
+ * so a script that looped over several shops in one process (the old
+ * approach) could only ever bind the first one; every later shop silently
+ * lost its reminders for that run. Fanning out across shops is
+ * marvin_reminder.sh's job: it invokes this file once per shop_id, each its
+ * own process, and is what cron actually calls.
+ *
+ * Scans local_resources.conversations.path/{{shop_id}}/*.json directly — one
+ * file per phone number, the same transcript format ChatTranscriptService
+ * reads and writes (see that class' docblock). It does NOT go through
+ * ChatTranscriptService for the read/list step because that service only
+ * knows how to load a single phone at a time; this script needs every file
+ * for a shop it does not yet have identities for. Same rationale as the
+ * shop-id-parameterised loadTranscript() this replaced in the old
+ * Conversations.php archiver.
  *
  * A conversation is nudged when its LAST logged message is:
  *   - outbound (direction "out" — Marvin, not the shopper, spoke last), AND
  *   - not tagged source_tool "checkout_completed" (they finished on the web,
  *     nothing to chase), AND
  *   - not already an idle reminder (source_tool "idle_reminder" — one nudge
- *     per silence, not one every minute for as long as they stay quiet), AND
+ *     per silence, not one every minute for as long as they stay quiet; this
+ *     is also how CartController::getCart marks "shopper is on the cart page
+ *     right now" — it tags the transcript the same way, no separate presence
+ *     store needed), AND
  *   - not a track_order (they're already in the middle of a tracking flow), AND
  *   - sent today (same calendar day as now), AND
  *   - older than IDLE_SECONDS defined in configs.
  *
- *   php v2/src/Scripts/MarvinReminder.php
+ *   php v2/src/Scripts/MarvinReminder.php <shop_id>
  */
 
 use Pmsrapi\V2\Core\Config;
@@ -41,8 +53,20 @@ if (PHP_SAPI !== 'cli') {
     exit;
 }
 
-const SHOPS = [98];
 const FALLBACK_TEXT = 'Hey, still there?';
+
+$shopIdArg = $argv[1] ?? null;
+
+if (!is_string($shopIdArg) || !ctype_digit($shopIdArg)) {
+    fwrite(STDERR, "Usage: php " . basename(__FILE__) . " <shop_id>\n");
+    exit(1);
+}
+
+$shopId = (int) $shopIdArg;
+
+// Bind once, up front. Safe here specifically because this process handles
+// exactly one shop — see the docblock above for why a per-shop loop can't.
+define('shop_id', $shopId);
 
 /** @var Container $container */
 $container = require __DIR__ . '/../../bootstrap.php';
@@ -56,7 +80,7 @@ $transcripts = $container->get(ChatTranscriptService::class);
 $reminderEnabled = $config->secret('marvin.reminder.enabled', false);
 
 if (!$reminderEnabled) {
-    $logger->info('marvin_reminder.disabled', ['shop_id' => SHOPS]);
+    $logger->info('marvin_reminder.disabled', ['shop_id' => $shopId]);
     echo "Marvin reminder is disabled in config, exiting.\n";
     exit;
 }
@@ -224,27 +248,6 @@ function reminderText(array $conversation, Config $config, AnthropicClient $anth
     }
 }
 
-/** Binds the request-scoped shop_id constant WhatsappGateway/ChatTranscriptService read from. */
-function bindShopId(int $shopId, Logger $logger): bool
-{
-    if (defined('shop_id')) {
-        if ((int) constant('shop_id') === $shopId) {
-            return true;
-        }
-
-        $logger->error('marvin_reminder.shop_id_conflict', [
-            'bound' => constant('shop_id'),
-            'requested' => $shopId,
-        ]);
-
-        return false;
-    }
-
-    define('shop_id', $shopId);
-
-    return true;
-}
-
 function run(
     int $shopId,
     Config $config,
@@ -279,10 +282,10 @@ function run(
 
         $last = lastMessage($transcript);
         if ($last === null || !isDue($last, $now)) {
-            continue;
-        }
-
-        if (!bindShopId($shopId, $logger)) {
+            // isDue() already covers "shopper is on the cart page right now":
+            // CartController::getCart tags the transcript's last message
+            // idle_reminder on every page visit, which isDue() treats the
+            // same as an idle reminder already sent this silence.
             continue;
         }
 
@@ -301,13 +304,15 @@ function run(
         }
     }
 
-    $logger->info('marvin_reminder.run', [
-        'shop_id' => $shopId,
-        'reminded' => $reminded,
-        'checked' => count($files),
-    ]);
+    if( $reminded > 0){
+        $logger->info('marvin_reminder.run', [
+            'shop_id' => $shopId,
+            'reminded' => $reminded,
+            'checked' => count($files),
+        ]);
 
-    echo "Reminded {$reminded} of " . count($files) . " conversation(s) for shop {$shopId}\n";
+        echo "Reminded {$reminded} of " . count($files) . " conversation(s) for shop {$shopId}\n";
+    }
 }
 
 function getPrompt(Config $config): string
@@ -327,6 +332,4 @@ function getPrompt(Config $config): string
     return trim($cts);
 }
 
-foreach (SHOPS as $shopId) {
-    run($shopId, $config, $logger, $anthropic, $gateway, $transcripts);
-}
+run($shopId, $config, $logger, $anthropic, $gateway, $transcripts);
