@@ -102,7 +102,7 @@ final class CartSyncService
             'category_id'       => (int) $item['category_id'],
             'item_description'  => (string) $item['item_description'],
             'unit_price'        => (float) $item['unit_price'],
-            'vat_percentage'    => (int) $item['vat_percentage'],
+            'vat_percentage'    => CartService::normalizeVatPercentage($item['vat_percentage']),
             'quantity'          => $quantity,
             'campaign_id'       => $item['campaign_id'] ?? null,
             'product_reference' => $item['product_reference'] ?? null,

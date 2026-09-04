@@ -194,7 +194,7 @@ final class CartService
             'category_id'       => (int) $item['category_id'],
             'item_description'  => (string) $item['item_description'],
             'unit_price'        => (float) $item['unit_price'],
-            'vat_percentage'    => (int) $item['vat_percentage'],
+            'vat_percentage'    => self::normalizeVatPercentage($item['vat_percentage']),
             'quantity'          => $newQuantity,
             'campaign_id'       => $item['campaign_id'] ?? null,
             'product_reference' => $item['product_reference'] ?? null,
@@ -460,6 +460,22 @@ final class CartService
         }
 
         return $nested;
+    }
+
+    /**
+     * A cart line's VAT rate can arrive either as a whole-number percent
+     * (6, 21 — the catalog/MarvinTools convention) or as a fraction
+     * (0.06, 0.21). The `vat_percentage` column is a whole-number `int(2)`,
+     * so a fraction is scaled up before storage — a bare `(int)` cast would
+     * otherwise truncate 0.21 straight to 0 and silently zero out the tax.
+     * No real VAT rate is below 1% as a whole number, so "< 1" reliably means
+     * "this is a fraction, not a percent".
+     */
+    public static function normalizeVatPercentage(mixed $value): int
+    {
+        $rate = (float) $value;
+
+        return (int) round($rate < 1 ? $rate * 100 : $rate);
     }
 
     /**
