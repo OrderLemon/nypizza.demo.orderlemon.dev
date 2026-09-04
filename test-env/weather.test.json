@@ -1,30 +1,55 @@
 {
   "role": "hive_mind",
   "env": "dev",
-  "ms_server_token": "test-token-please-change",
-  "local_log": { "path": "/tmp/pmsrapi.log", "level": "errors" },
 
-  "db":    { "host": "db", "port": 3306, "name": "pmsrapi_test", "username": "app", "password": "app" },
-  "redis": { "host": "redis", "port": 6379, "prefix": "ms:test:" },
+  
+   "allowed_functions": {                                                                                                                                                                                                         
+      "POST": ["insert", "send_telegram_log"]                                                                                                                                                                                      
+    },                                                                                                                                                                                                                             
+                                                                                                                                                                                                                                   
+   "orderlemon_config": {                                                                                                                                                                                                         
+      "environment": "dev",           
+       "use_dbal": true,
+    "db": {
+      "host": "192.168.0.22",
+      "port": 3306,
+      "name": "orderlemon_dev",
+      "user": "gateway",
+      "password": "IEOvUMBxg083yu12L3UCEXrnx36iRqs95nqbveG7bjE1i8E9lDrCBbwhnNMfJD2"
+    },
+    "telegram": {             
+      "chats":{
+      	"dev": {
+      		"chat_id": "-1004385708107",
+      		"token": "8709474041:AAE9S9mIVSmPK6r8ux9icDat8xs4HvJhawE"
+         },
+         "onboarding": {
+      		"chat_id": "-1003534740482",
+      		"token": "8998882991:AAHU_KIUHxFLsEBSCmL00Iz9CZnA4mVBLX8"
+         },
+         "catalog_media": {
+      		"chat_id": "-1003659381441",
+      		"token": "8998882991:AAHU_KIUHxFLsEBSCmL00Iz9CZnA4mVBLX8"
+         },
+        "prod_alerts": {
+      		"chat_id": "-1004490507833",
+      		"token": "8998882991:AAHU_KIUHxFLsEBSCmL00Iz9CZnA4mVBLX8"
+         }
+      	}
+      }                                                                                                                                                                                                                            
+    },
+  "ms_server_token": "da41b5c4481f0c59ee83a13ae61d5043bbfac5b191e11d5bd83a72450c55590131e6",
+  "local_log": { "path": "/home/errors/telegram.ms.log", "level": "everything" },
+
+  "redis": { "host": "127.0.0.1", "port": 6379, "prefix": "ms:test:" },
 
   "cache":      { "ttl": 30 },
   "rate_limit": { "enabled": true, "max": 40, "window": 60 },
   "debug":      { "enabled": true, "auto_arm_on_error": true, "window": 120, "capture_bodies": true },
 
-  "resources": {
-    "clients": { "table": "clients", "methods": ["GET", "POST", "PUT", "DELETE"], "per_page": 25 }
-  },
-
-  "functions": {
-    "get_client":     { "method": "GET", "path": "/clients/{id}" },
-    "export_clients": { "method": "GET", "path": "/stream/clients", "stream": true }
-  },
 
   "universe": [
-    { "name": "self", "ip": "127.0.0.1", "port": 8080, "token": "test-token-please-change", "ssl": false }
-  ],
+    { "name": "self", "ip": "telegram.ms.orderlemon.dev", "port": 443, "token": "da41b5c4481f0c59ee83a13ae61d5043bbfac5b191e11d5bd83a72450c55590131e6", "ssl": false }
+  ]
 
-  "function_map": {
-    "demo": { "service": "self", "method": "GET", "path": "/stream/_demo", "stream": true }
-  }
 }
