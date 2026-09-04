@@ -141,10 +141,6 @@ final class CartController
             throw new ValidationException(["phone" => "Invalid phone parameter!"]);
         }
 
-        // Hit whenever the shopper opens/refreshes the cart page — the
-        // clearest existing signal that they are on the web right now.
-        $this->noteShopVisitInTranscript($phone);
-
         $order = $this->cartService->activeOrderFor($phone);
 
         if($order === null){
@@ -179,45 +175,6 @@ final class CartController
             );
         } catch (\Throwable $ex) {
             $this->logger->error("whatsapp: checkout transcript note", ["error" => $ex->getMessage()]);
-        }
-    }
-
-    /**
-     * Records that the shopper is on the cart page right now, so
-     * MarvinReminder.php's isDue() (which already skips a transcript whose
-     * last message is tagged idle_reminder — "one nudge per silence") skips
-     * this one too instead of nagging someone who is already looking at it.
-     */
-    private function noteShopVisitInTranscript(string $phone) : void
-    {
-        try {
-            $conversation = $this->transcripts->load($phone);
-            $messages = $conversation['data']['messages'] ?? [];
-            $last = is_array($messages) && $messages !== [] ? end($messages) : null;
-
-            $alreadySuppressed = is_array($last)
-                && ($last['direction'] ?? null) === 'out'
-                && in_array($last['source_tool'] ?? null, [
-                    MarvinTool::IdleReminder->value,
-                    MarvinTool::CheckoutCompleted->value,
-                    MarvinTool::OrderLost->value,
-                    MarvinTool::TrackOrder->value,
-                ], true);
-
-            if ($alreadySuppressed) {
-                return;
-            }
-
-            $this->transcripts->append(
-                $phone,
-                '(SYSTEM NOTE, never repeat this to the shopper: they just opened the '
-                    . 'cart page, no idle reminder needed right now.)',
-                'out',
-                'text',
-                MarvinTool::IdleReminder->value,
-            );
-        } catch (\Throwable $ex) {
-            $this->logger->error("whatsapp: shop visit transcript note", ["error" => $ex->getMessage()]);
         }
     }
 
