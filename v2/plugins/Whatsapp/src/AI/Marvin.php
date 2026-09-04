@@ -67,11 +67,11 @@ final class Marvin
     private string $replyLanguage = 'en';
 
     private const STALE = [
-        MarvinTool::GetUsualForUser->value => '[Told them their usual. Details omitted — look it up again if asked.]',
-        MarvinTool::TrackOrder->value           => '[Reported delivery status. Details omitted — look it up again if asked.]',
-        MarvinTool::GreetWithUsual->value            => '[Greeted them and offered their usual. Details omitted — look it up again if asked.]',
-        MarvinTool::GetCart->value              => '[Read back their cart/order. Details omitted — look it up again if asked.]',
-        MarvinTool::DetectLanguage->value       => '[Detected language. Details omitted — look it up again if asked.]',
+        MarvinTool::GetUsualForUser->value => '(SYSTEM NOTE, never repeat this to the shopper: already told them their usual. Call the tool again if asked.)',
+        MarvinTool::TrackOrder->value      => '(SYSTEM NOTE, never repeat this to the shopper: already reported delivery status. Call the tool again if asked.)',
+        MarvinTool::GreetWithUsual->value  => '(SYSTEM NOTE, never repeat this to the shopper: already greeted them and offered their usual. Call the tool again if asked.)',
+        MarvinTool::GetCart->value         => '(SYSTEM NOTE, never repeat this to the shopper: already read back their cart/order. Call the tool again if asked.)',
+        MarvinTool::DetectLanguage->value  => '(SYSTEM NOTE, never repeat this to the shopper: already detected language. Call the tool again if asked.)',
     ];
 
     /**
@@ -231,7 +231,7 @@ final class Marvin
             }
         }
 
-        $text = trim($text);
+        $text = trim($this->stripStaleNotes($text));
 
         if ($text === '') {
             $this->logger->warning('marvin: empty reply', [
@@ -242,6 +242,28 @@ final class Marvin
         }
 
         return $text;
+    }
+
+    /**
+     * Hard backstop for shopper-facing output. The prompt tells Marvin the
+     * self::STALE placeholders (see history()) are internal notes he must never
+     * repeat, but that is advisory only — a WhatsApp bot cannot rely on the
+     * model always complying. Strip any that leak through before the reply is
+     * sent, and log it so the leak rate is visible instead of silent.
+     */
+    private function stripStaleNotes(string $text): string
+    {
+        $stripped = preg_replace('/\(SYSTEM NOTE,.*?\)\s*/su', '', $text);
+
+        if ($stripped === null) {
+            return $text;
+        }
+
+        if ($stripped !== $text) {
+            $this->logger->warning('marvin: stripped leaked SYSTEM NOTE from reply', []);
+        }
+
+        return $stripped;
     }
 
     // ------------------------------------------------------------ the prompt
@@ -309,6 +331,10 @@ final class Marvin
             throw new ApiException("Shop address required to build prompt!");
         }
 
+        $supps = $this->config->secret("support");
+
+        [$support1, $support2] = array_values($supps);
+
         //build the address
         // $address = isset($this->shopInfo["country"]) ? $this->shopInfo["country"] . ", " : " ";
         // $address .= isset($this->shopInfo["city"]) ? $this->shopInfo["city"] . ", " : " ";
@@ -317,7 +343,10 @@ final class Marvin
         $locations = json_encode($this->shopInfo["stores"]);
     
         
-        $this->systemText = str_replace('{{CLIENT_NAME}}', ucwords($this->clientName), $template);
+        $this->systemText = str_replace('{{SUPPORT_1}}', ucwords($support1), $template);
+        $this->systemText = str_replace('{{SUPPORT_2}}', ucwords($support2), $this->systemText);
+
+        $this->systemText = str_replace('{{CLIENT_NAME}}', ucwords($this->clientName), $this->systemText);
 
         // company name will be the shop name in the demo version
         $this->systemText = str_replace('{{COMPANY_NAME}}', strtoupper($this->shopInfo["name"]), $this->systemText);
@@ -337,7 +366,11 @@ final class Marvin
 
     private function promptPath(): string
     {
-        $path = $this->config->secret('marvin.prompts.main',);
+        if( shop_id === 102){
+            $path = $this->config->secret('marvin.prompts.wine_specialist',);
+        }else{
+            $path = $this->config->secret('marvin.prompts.main',);
+        }
 
         if(!defined("shop_id") || !is_numeric(shop_id)){
             throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
@@ -450,7 +483,7 @@ final class Marvin
     private function fallback(): string
     {
         $override = $this->setting('fallback', null);
-        
+
         $supps = $this->config->secret("support");
 
         [$support1, $support2] = array_values($supps);
