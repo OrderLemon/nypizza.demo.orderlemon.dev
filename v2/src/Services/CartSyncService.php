@@ -8,6 +8,7 @@ use Pmsrapi\V2\Cache\RedisLock;
 use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\ValidationException;
+use Pmsrapi\V2\Exception\ServiceException;
 
 /**
  * Replaces a cart's entire contents with the given items in one call:
@@ -29,7 +30,7 @@ final class CartSyncService
      *        configs[] — minus ids.
      * @return array<string, mixed> the synced cart, items attached
      */
-    public function replaceCart(array $items, string $phoneNumber): ?array
+    public function replaceCart(array $items, string $phoneNumber, int $logistics = 1): ?array
     {
         // Keyed by phone rather than order id: no cart may exist yet at this
         // point, and phone is what actually identifies "the same cart" to a
@@ -50,6 +51,18 @@ final class CartSyncService
                 }
 
                 $order = $this->cart->newOrder($phoneNumber);
+            }
+
+            $order["logistics_type"] = $logistics;
+
+            //TO-DO: send the order as apram to withItemsAndTotal
+            $orderUpdated = $this->repo->updateById($this->ordersTable(),
+                $order["id"],
+                $order,
+            );
+
+            if($orderUpdated < 0 ){
+                throw new ServiceException('Could not update order logistiscs!');
             }
 
             $orderId = (int) $order['id'];
@@ -166,4 +179,10 @@ final class CartSyncService
     {
         return 'order_items_active_' . $this->shopId();
     }
+
+        private function ordersTable(): string
+    {
+        return 'orders_active_' . $this->shopId();
+    }
+
 }

@@ -665,6 +665,10 @@ final class MarvinTools
         }
 
         $orderHistory = $this->orderService->activeOrdersFor($phone);
+
+        if($orderHistory === []){
+            $orderHistory = $this->orderService->ordersFor($phone, true);
+        }
         
         $this->attach(MarvinTool::GreetWithUsual->value, ["order_history" => $orderHistory]);
 

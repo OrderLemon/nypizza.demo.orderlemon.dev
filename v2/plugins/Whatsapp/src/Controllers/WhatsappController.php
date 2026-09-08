@@ -101,6 +101,26 @@ final class WhatsappController
         }
         // $this->logger->info("whatsatpp: shop details", $this->shop);
 
+        // The gateway's "incoming" envelope is also used to relay events with
+        // no real customer content (delivery/read receipts, message-status
+        // pings). Without real content there is nothing to reply to and no
+        // reason to touch the client record, so bail out before
+        // handleCustomer() ever runs — that's what creates/updates the
+        // clients_{shop_id} row.
+        if (!$this->hasUsableContent()) {
+            $this->logger->info('whatsapp: ignoring inbound payload with no usable content', [
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => $this->messagePayload["message_type"],
+            ]);
+
+            return Response::ok([
+                'received' => true,
+                'ignored' => true,
+                'sender' => $this->messagePayload["phone_number"],
+                'message_type' => $this->messagePayload["message_type"],
+            ]);
+        }
+
         //get or insert client
         $this->handleCustomer();
 
@@ -350,11 +370,12 @@ final class WhatsappController
             throw new ApiException("Marvin did not return a message or order history to send!");
         }
 
+        $hasHistory = is_array($reply["order_history"]) && count($reply["order_history"]) > 1;
         try {
             $this->gateway->sendButtons(
                 $this->messagePayload["phone_number"],
                 $reply["message"],
-                $this->getButtonsForReturningUser($this->conversationLanguage),
+                $this->getButtonsForReturningUser($this->conversationLanguage, $hasHistory),
                 $this->messagePayload["conversation_id"]);
             
             // Log Marvin's own turn, or he will not see his previous answers on
@@ -436,8 +457,18 @@ final class WhatsappController
 
         $greeting = "Hi, Welcome to " . $shopName;
 
+        $channelLink = $this->config->secret("whatsapp.channel_link", "");
+
         try {
             $this->sendMenuLink($greeting, $this->shopLink(), $this->headerImage());
+
+            if( $channelLink !== ""){
+                $this->sendMenuLink(
+                    $this->language->translate("channel_invitation", $this->conversationLanguage), 
+                    $channelLink,
+                    null,
+                    $this->language->translate("make_selection", $this->conversationLanguage));
+            }
 
             // Record the greeting so Marvin knows the shopper was already
             // welcomed and does not greet them a second time.
@@ -801,6 +832,20 @@ final class WhatsappController
         ];
     }
 
+    /**
+     * True when the payload carries something an actual customer sent — text,
+     * an interactive reply, a location, or a file (audio/image/etc). False for
+     * "incoming" envelopes with none of these, which is what the gateway sends
+     * for events that aren't a real customer message (e.g. delivery/read
+     * receipts) — those must never reach handleCustomer()/reply().
+     */
+    private function hasUsableContent(): bool
+    {
+        return $this->messagePayload["message"] !== ''
+            || $this->messagePayload["location"] !== null
+            || $this->messagePayload["file_attachment"] !== '';
+    }
+
     private function getPayloadData(array $body) : array
     {
         // $this->logger->info("inbound message data", $body);
@@ -842,15 +887,11 @@ final class WhatsappController
         return $errors;
     }
 
-    private function getButtonsForReturningUser(string $language) : array
+    private function getButtonsForReturningUser(string $language, bool $includeUsual = true) : array
     {
-        return [
-            [
-                "id" => "campaigntype-1",
-                "type" => "reply",
-                "title" => $this->language->translate('the_usual', $language)
-            ],
-            [
+
+        $buttons = [
+             [
                 "id" => "campaigntype-2",
                 "type" => "reply",
                 "title" => $this->language->translate('something_else', $language)
@@ -859,20 +900,33 @@ final class WhatsappController
                 "id" => "campaigntype-3",
                 "type" => "reply",
                 "title" => $this->language->translate('todays_promo', $language)
-            ],
-
+            ]
         ];
+
+
+        if($includeUsual){
+            array_unshift($buttons, [
+                "id" => "campaigntype-1",
+                "type" => "reply",
+                "title" => $this->language->translate('the_usual', $language)
+            ],
+           );
+        }
+
+        return $buttons;
     }
 
-    private function sendMenuLink(string $message, string $url, ?string $headerImage = null) : array
+    private function sendMenuLink(string $message, string $url, ?string $headerImage = null, ?string $footerText = null) : array
     {
+        $footerText = $footerText === null ? $this->language->translate('open_menu_caption', $this->conversationLanguage)
+            : $footerText;
 
-    return $this->gateway->sendLink(
+        return $this->gateway->sendLink(
             $this->messagePayload["phone_number"],
             $message,
             $this->language->translate('open', $this->conversationLanguage),
             $url,
-            $this->language->translate('open_menu_caption', $this->conversationLanguage),
+            $footerText,
             $headerImage,
             $this->messagePayload["conversation_id"]);
     }
