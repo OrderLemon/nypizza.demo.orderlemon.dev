@@ -74,13 +74,15 @@ final class CartController
             throw new ValidationException(["items" => "Missing or invalid items!"]);
         }
 
-        if(!isset($body["logistics_type"]) || ($body["logistics_type"] !== 1 && $body["logistics_type"] !== 2)){
-            throw new ValidationException(["logistiscs_type" => "Invalid logistic type! Must be a number!"]);
+        $logistisc = 1;
+        
+        if(isset($body["logistics_type"]) && ($body["logistics_type"] === 1 || $body["logistics_type"] === 2)){
+            $logistisc = (int)$body["logistics_type"];
         }
 
-        $result = $this->cartService->updateCart($body["items"], $body["phonenumber"], (int)$body["logistics_type"]);
+        // $result = $this->cartService->updateCart($body["items"], $body["phonenumber"], $logistisc);
 
-
+        $result = $this->cartSyncService->replaceCart($body["items"], $body["phonenumber"], $logistisc);
         if($result === null){
             return Response::error(503, ["cart busy" => "Cart is busy! Please try again!"]);
         }

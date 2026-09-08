@@ -128,32 +128,97 @@ final class CartService
 
     /**
      * Finds the line this item matches: by "id" if given (scoped to this
-     * order), else by product_id/campaign_id/parent_id — unless the item
-     * carries its own "configs", which always forces a new line instead.
+     * order), else by product_id/campaign_id/parent_id among lines that also
+     * carry the exact same set of configs (toppings) — callers like Marvin's
+     * "add to order" never know a line's id, so without this a repeat "add
+     * another one" of the same customized product would always insert a new
+     * line instead of bumping the existing one's quantity. Two lines with
+     * different toppings must never merge, so an exact config match is
+     * required, not just a product match.
+     *
+     * The web cart never sends an id either, and adds a complex product in
+     * two calls — a plain "add" the moment it's tapped, then a second "add"
+     * once the shopper picks its configs in a follow-up prompt — with nothing
+     * to correlate the two. If this item now carries configs and no line
+     * matches them exactly, but there IS a still-configless line for the same
+     * product (the first call's placeholder), treat that as the same
+     * in-progress addition finishing rather than a genuinely separate one, and
+     * report it via "completingConfigs" so the caller applies its quantity as
+     * a replacement, not an addition.
+     *
+     * @return array{line: ?array<string, mixed>, completingConfigs: bool}
      */
-    private function findMatchingLine(?int $orderId, array $item): ?array
+    private function findMatchingLine(?int $orderId, array $item): array
     {
         if ($orderId === null) {
-            return null;
+            return ['line' => null, 'completingConfigs' => false];
         }
 
         if (isset($item['id']) && $item["id"] !== null) {
-            return $this->repo->selectRow($this->orderItemsTable(), [
+            $line = $this->repo->selectRow($this->orderItemsTable(), [
                 'order_id' => $orderId,
                 'id'       => (int) $item['id'],
             ]);
+
+            return ['line' => $line, 'completingConfigs' => false];
         }
 
-        if (!empty($item['configs'])) {
-            return null;
+        $candidates = $this->repo->selectRows(
+            $this->orderItemsTable(),
+            [
+                'order_id'    => $orderId,
+                'product_id'  => (int) $item['product_id'],
+                'campaign_id' => $item['campaign_id'] ?? null,
+                'parent_id'   => $item['parent_id'] ?? null,
+            ],
+            orderBy: 'id:desc',
+        );
+
+        $wanted = $this->configSignature(is_array($item['configs'] ?? null) ? $item['configs'] : []);
+        $configlessCandidate = null;
+
+        foreach ($candidates as $candidate) {
+            $existingSignature = $this->configSignature(
+                $this->repo->selectRows($this->orderItemsTable(), ['parent_id' => (int) $candidate['id']]),
+            );
+
+            if ($existingSignature === $wanted) {
+                return ['line' => $candidate, 'completingConfigs' => false];
+            }
+
+            if ($existingSignature === [] && $configlessCandidate === null) {
+                $configlessCandidate = $candidate;
+            }
         }
 
-        return $this->repo->selectRow($this->orderItemsTable(), [
-            'order_id'    => $orderId,
-            'product_id'  => (int) $item['product_id'],
-            'campaign_id' => $item['campaign_id'] ?? null,
-            'parent_id'   => $item['parent_id'] ?? null,
-        ]);
+        if ($wanted !== [] && $configlessCandidate !== null) {
+            return ['line' => $configlessCandidate, 'completingConfigs' => true];
+        }
+
+        return ['line' => null, 'completingConfigs' => false];
+    }
+
+    /**
+     * An order-independent, repeat-sensitive fingerprint of a config set's
+     * products — two toppings of the same product are not the same as one,
+     * so this is a sorted list, not a set. A config may arrive shaped as a
+     * cart item ("product_id") or a resolved option ("option_id"); either is
+     * accepted since normalizeIds() only runs on top-level items, not on the
+     * "configs" nested inside them.
+     *
+     * @param list<array<string, mixed>> $configs
+     * @return list<int>
+     */
+    private function configSignature(array $configs): array
+    {
+        $ids = array_map(
+            static fn(array $config): int => (int) ($config['product_id'] ?? $config['option_id'] ?? 0),
+            $configs,
+        );
+
+        sort($ids);
+
+        return $ids;
     }
 
     // ---------------------------------------------------------------- write
@@ -167,18 +232,25 @@ final class CartService
         $item = $this->normalizeIds($item);
         $this->validateItem($item);
 
-        $existingLine = $this->findMatchingLine($orderId, $item);
+        ['line' => $existingLine, 'completingConfigs' => $completingConfigs] = $this->findMatchingLine($orderId, $item);
         $existingQuantity = $existingLine !== null ? (int) $existingLine['quantity'] : 0;
 
-        $override = (bool) ($item['override_quantity'] ?? false);
-        $newQuantity = max(0, $override ? (int) $item['quantity'] : $existingQuantity + (int) $item['quantity']);
+        // Completing a pending configless line is the same cart action
+        // finishing, not a second addition — set its quantity outright
+        // instead of adding this call's quantity on top of what's already there.
+        $override = (bool) ($item['override_quantity'] ?? false) || $completingConfigs;
+        $requestedQuantity = (int) $item['quantity'];
+        $newQuantity = max(0, $override ? $requestedQuantity : $existingQuantity + $requestedQuantity);
 
         if ($newQuantity === 0) {
             if ($existingLine === null) {
+            $this->logger->error("Inexisting line!");
+
                 // Nothing existed and nothing changed.
                 return [];
             }
 
+            $this->logger->error("Removing items", $existingLine);
             $change = $this->changeRecord($existingLine, $existingQuantity, 0);
             $this->deleteLine((int) $existingLine['id']);
 
@@ -422,7 +494,7 @@ final class CartService
         $itemsTotal = round($itemsTotal, 2);
 
         return [
-            'subtotal'     => $itemsTotal,
+            'subtotal'     => round($itemsTotal - $tax,2),
             'savings'      => 0.0,
             'items_total'  => $itemsTotal,
             'delivery_fee' => $deliveryFee,

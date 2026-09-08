@@ -105,6 +105,22 @@ final class LanguageHelper
             'de' => 'Klicke hier immer für dein Menü',
             'fr' => 'Cliquez toujours ici pour votre menu',
         ],
+        'channel_invitation' => [
+            'en' => 'Do you want to stay up to date on all our offers, daily specials, and menu updates? Then sign up for our WhatsApp channel',
+            'nl' => 'Wil je op de hoogte blijven van al onze aanbiedingen, daghappen en menu updates? Meld je dan aan voor ons WhatsApp kanaal',
+            'tr' => 'Tüm fırsatlarımızdan, günün özel menülerinden ve menü güncellemelerinden haberdar olmak ister misiniz? O zaman WhatsApp kanalımıza kaydolun',
+            'es' => '¿Quieres estar al día de todas nuestras ofertas, especiales del día y actualizaciones del menú? Entonces regístrate en nuestro canal de WhatsApp',
+            'de' => 'Möchtest du über all unsere Angebote, Tagesspecials und Menü-Updates auf dem Laufenden bleiben? Dann melde dich für unseren WhatsApp-Kanal an',
+            'fr' => 'Souhaitez-vous rester informé de toutes nos offres, plats du jour et mises à jour du menu ? Alors inscrivez-vous à notre chaîne WhatsApp',
+        ],
+        'make_selection' => [
+            'en' => 'Please make your selection below',
+            'nl' => 'Maak hieronder je keuze',
+            'tr' => 'Lütfen aşağıdan seçiminizi yapın',
+            'es' => 'Por favor, haz tu selección a continuación',
+            'de' => 'Bitte triff deine Auswahl unten',
+            'fr' => 'Veuillez faire votre choix ci-dessous',
+        ],
     ];
 
     public function __construct(
