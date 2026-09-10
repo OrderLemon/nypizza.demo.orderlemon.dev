@@ -121,6 +121,8 @@ final class WhatsappController
             ]);
         }
 
+        $this->logger->error("inbounde message received", $body);
+
         //get or insert client
         $this->handleCustomer();
 
@@ -469,8 +471,6 @@ final class WhatsappController
         $channelLink = $this->config->secret("whatsapp.channel_link", "");
 
         try {
-            $this->sendMenuLink($greeting, $this->shopLink(), $this->headerImage());
-
 
             $wineShops = $this->config->secret("wine_shops",[]);
 
@@ -481,6 +481,8 @@ final class WhatsappController
                 $greeting = $this->language->translate("welcome", $this->conversationLanguage, ["shop_name" => $shopName]);
                 $channelInvitationMessage = $this->language->translate("channel_invitation", $this->conversationLanguage, ["shop_name" => $shopName]);
             }
+
+            $this->sendMenuLink($greeting, $this->shopLink(), $this->headerImage());
 
             if( $channelLink !== ""){
                 $this->sendMenuLink(
@@ -614,13 +616,17 @@ final class WhatsappController
             $this->messagePayload["message"] = $transcribedText;
         }
 
+        $convEmpty = false;
         $this->transcripts->append(
             $this->messagePayload["phone_number"],
             $this->messagePayload["message"],
             'in',
             $this->messagePayload["message_type"],
+            null,
+            $convEmpty,
         );
 
+        $this->isNewClient = $convEmpty;
         $this->conversrationService->upsertConversation($this->messagePayload["phone_number"]);
 
         if (!$this->isNewClient && $this->messagePayload["message_type"] === "location") {

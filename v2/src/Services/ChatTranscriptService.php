@@ -58,8 +58,17 @@ final class ChatTranscriptService
         string $direction = 'out',
         string $messageType = 'text',
         ?string $sourceTool = null,
+        bool &$convEmpty = false,
     ): void {
         $conversation = $this->load($phone);
+
+        // Must be read BEFORE this entry is appended below: it answers
+        // "did this phone have a transcript at all before this message?",
+        // not "is the transcript empty after we just wrote to it" (which
+        // can never be true).
+        $convEmpty = !isset($conversation['data']['messages'])
+            || !is_array($conversation['data']['messages'])
+            || $conversation['data']['messages'] === [];
 
         if (!isset($conversation['data']['messages']) || !is_array($conversation['data']['messages'])) {
             $conversation = ['phone' => $phone, 'data' => ['total' => 0, 'messages' => []]];
