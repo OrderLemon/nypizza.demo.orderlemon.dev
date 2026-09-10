@@ -26,12 +26,12 @@ final class LanguageHelper
 
     private const TRANSLATIONS = [
         'welcome' => [
-            'en' => "Hi, welcome to {{SHOP_NAME}}!",
-            'nl' => "Hoi, welkom bij {{SHOP_NAME}}!",
-            'tr' => "Merhaba, {{SHOP_NAME}}'e hoş geldiniz!",
-            'es' => "¡Hola, bienvenido a {{SHOP_NAME}}!",
-            'de' => "Hallo, willkommen bei {{SHOP_NAME}}!",
-            'fr' => "Bonjour, bienvenue chez {{SHOP_NAME}} !",
+            'en' => "Hi, welcome to {{SHOP_NAME}}! I'm Marvin, your assistant. Ask me anything about the menu, or let me help you place an order, by text or voice. Prefer to browse yourself? Just tap OPEN.",
+            'nl' => "Hoi, welkom bij {{SHOP_NAME}}! Ik ben Marvin, je assistent. Vraag me gerust alles over het menu, of ik help je met bestellen, via tekst of spraakbericht. Liever zelf rondkijken? Tik dan op OPENEN.",
+            'tr' => "Merhaba, {{SHOP_NAME}}'e hoş geldiniz! Ben Marvin, asistanınız. Menü hakkında istediğinizi sorabilir, ya da yazarak veya sesli mesajla sipariş vermenize yardımcı olabilirim. Kataloğa kendiniz göz atmak isterseniz AÇ düğmesine dokunmanız yeterli.",
+            'es' => "¡Hola, bienvenido a {{SHOP_NAME}}! Soy Marvin, tu asistente. Pregúntame lo que quieras sobre el menú, o te ayudo a hacer tu pedido, por texto o audio. ¿Prefieres ver el catálogo tú mismo? Solo pulsa ABRIR.",
+            'de' => "Hallo, willkommen bei {{SHOP_NAME}}! Ich bin Marvin, dein Assistent. Frag mich alles zum Menü, oder ich helfe dir bei der Bestellung, per Text oder Sprachnachricht. Möchtest du lieber selbst stöbern? Tippe einfach auf ÖFFNEN.",
+            'fr' => "Bonjour, bienvenue chez {{SHOP_NAME}} ! Je suis Marvin, votre assistant. Posez-moi vos questions sur le menu, ou laissez-moi vous aider à passer commande, par texte ou message vocal. Vous préférez parcourir vous-même ? Appuyez sur OUVRIR.",
         ],
         'welcome_wine' => [
             'en' => "Hi, welcome to {{SHOP_NAME}}!\nOrdering is very easy: you just tell me what you're looking for and your specific preferences, and I'll give you a few suggestions and add it to your basket if needed. Tell me when you're done, and then I'll give you a link to check out.",
