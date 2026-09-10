@@ -801,7 +801,7 @@ final class MarvinTools
             return ['found' => 0];
         }
 
-        $orders = $this->orderService->activeOrdersFor($phone);
+        $orders = $this->orderService->activeOrdersFor($phone, ["status_id" => 2]);
 
         
         if ($orders === []) {
@@ -809,6 +809,12 @@ final class MarvinTools
         }
 
         $chosen = $orders[0];
+        if($chosen["logistics_type"] === 1){
+            return ['found'        => 1,
+                'order_id'     => $chosen['order_id'],
+                'message'      => ["Order is for pickup, not for delivery"],
+            ];
+        }
 
         // if (isset($input['order_id'])) {
         //     // Model-supplied, therefore shopper-supplied. Verify ownership.
