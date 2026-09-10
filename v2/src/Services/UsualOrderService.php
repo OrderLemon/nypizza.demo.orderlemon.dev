@@ -58,6 +58,11 @@ final class UsualOrderService
     {
         $orders = $this->historyFor($phone);
 
+        //fallback to orders with status "ordered"
+        if ($orders === []) {
+            $orders = $this->orderQueryService->ordersFor($phone, false, ["status_id" => 2] );
+        }
+      
         if ($orders === []) {
             return null;
         }

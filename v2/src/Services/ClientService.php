@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Pmsrapi\V2\Services;
 
+use Exception;
 use Pmsrapi\V2\Exception\ServiceException;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Helpers\JsonHelper;
@@ -239,9 +240,15 @@ class ClientService
 
     public function getOrInsertGlobalClient(string $phoneNumber, array $data): ?array
     {
-        $client = $this->upsertGlobalClient($phoneNumber, $data);
+        try{
+            $client = $this->upsertGlobalClient($phoneNumber, $data);
+        }catch(Exception $ex){
+            $this->logger->error("error upserting global client", ["error" => $ex->getMessage()]);
+            throw new ServiceException("Failed to upsert global client for phone number: $phoneNumber");
+        }
 
         if ($client === null) {
+            $this->logger->error("error upserting global client");
             throw new ServiceException("Failed to upsert global client for phone number: $phoneNumber");
         }
 

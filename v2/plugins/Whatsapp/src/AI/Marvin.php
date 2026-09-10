@@ -366,7 +366,9 @@ final class Marvin
 
     private function promptPath(): string
     {
-        if( shop_id === 102){
+        $wineShops = $this->config->secret("wine_shops",[]);
+
+        if(in_array(shop_id, $wineShops)){
             $path = $this->config->secret('marvin.prompts.wine_specialist',);
         }else{
             $path = $this->config->secret('marvin.prompts.main',);

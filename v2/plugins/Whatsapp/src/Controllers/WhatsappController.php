@@ -126,6 +126,14 @@ final class WhatsappController
 
         $reply = $this->reply();
 
+        if($reply["sent"] === false){
+            $this->logger->error("Outbound reply failed!",[
+                "shop_number" => $this->messagePayload["shop_phone_number"],
+                "sender" => $this->messagePayload["phone_number"],
+                "inbound_message" => $this->messagePayload["message"],
+            ]);
+        }
+
         return Response::ok([
             'received' => true,
             'account' => $this->messagePayload["account"],
@@ -376,7 +384,7 @@ final class WhatsappController
                 $this->messagePayload["phone_number"],
                 $reply["message"],
                 $this->getButtonsForReturningUser($this->conversationLanguage, $hasHistory),
-                $this->messagePayload["conversation_id"]);
+                (string)$this->messagePayload["conversation_id"]);
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -455,16 +463,28 @@ final class WhatsappController
     {
         $shopName = ucwords($this->shop["name"]);
 
-        $greeting = "Hi, Welcome to " . $shopName;
+        $greeting = "";
+        $channelInvitationMessage = "";
 
         $channelLink = $this->config->secret("whatsapp.channel_link", "");
 
         try {
             $this->sendMenuLink($greeting, $this->shopLink(), $this->headerImage());
 
+
+            $wineShops = $this->config->secret("wine_shops",[]);
+
+            if(in_array(shop_id, $wineShops)){
+                $greeting = $this->language->translate("welcome_wine", $this->conversationLanguage, ["shop_name" => $shopName]);
+                $channelInvitationMessage = $this->language->translate("channel_invitation_wine", $this->conversationLanguage, ["shop_name" => $shopName]);
+            }else{
+                $greeting = $this->language->translate("welcome", $this->conversationLanguage, ["shop_name" => $shopName]);
+                $channelInvitationMessage = $this->language->translate("channel_invitation", $this->conversationLanguage, ["shop_name" => $shopName]);
+            }
+
             if( $channelLink !== ""){
                 $this->sendMenuLink(
-                    $this->language->translate("channel_invitation", $this->conversationLanguage), 
+                    $channelInvitationMessage, 
                     $channelLink,
                     null,
                     $this->language->translate("make_selection", $this->conversationLanguage));
@@ -767,25 +787,34 @@ final class WhatsappController
         return Response::ok(["data" => $checkResults]);
     }
 
+    /** clients_data.first_name is varchar(30); overflow is redistributed into last_name rather than truncated mid-word. */
+    private const int CLIENT_FIRST_NAME_MAX_LENGTH = 30;
+
+    /** clients_data.last_name is varchar(40). */
+    private const int CLIENT_LAST_NAME_MAX_LENGTH = 40;
+
     private function extractClientName(array $body) : ?string
     {
         if(!isset($body["data"]["contact"])){
             return null;
         }
-        
-        $this->messagePayload["first_name"] = trim((string) ($body["data"]["contact"]["firstName"] ?? ''));
-        $this->messagePayload["last_name"] = trim((string) ($body["data"]["contact"]["lastName"] ?? ''));
 
         $contact = $body["data"]["contact"];
 
+        $firstName = trim((string) ($contact["firstName"] ?? ''));
+        $lastName = trim((string) ($contact["lastName"] ?? ''));
+
+        [$this->messagePayload["first_name"], $this->messagePayload["last_name"]]
+            = $this->fitNameToColumns($firstName, $lastName);
+
         $fullName = "";
 
-        if(isset($contact["firstName"]) && trim($contact["firstName"]) !== ""){
-            $fullName = $contact["firstName"];
+        if($firstName !== ""){
+            $fullName = $firstName;
         }
 
-        if(isset($contact["lastName"]) && trim($contact["lastName"]) !== ""){
-            $fullName .= " " . $contact["lastName"];
+        if($lastName !== ""){
+            $fullName .= " " . $lastName;
         }
 
         if(trim($fullName) === "" && isset($contact["displayName"]) && trim($contact["displayName"]) !== ""){
@@ -793,6 +822,69 @@ final class WhatsappController
         }
 
         return trim($fullName) !== "" ? $fullName : null;
+    }
+
+    /**
+     * WhatsApp providers sometimes hand us a whole name (or a business name)
+     * as firstName with an empty lastName. Storing that as-is would either
+     * fail against clients_data.first_name's length limit or get truncated
+     * mid-word by MySQL. Redistribute it across first/last name at word
+     * boundaries instead, so the client's name is preserved in full whenever
+     * it fits within the two columns combined.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function fitNameToColumns(
+        string $firstName,
+        string $lastName,
+        int $firstMax = self::CLIENT_FIRST_NAME_MAX_LENGTH,
+        int $lastMax = self::CLIENT_LAST_NAME_MAX_LENGTH,
+    ) : array
+    {
+        // Already split by the provider (or short enough): just guard the length.
+        if ($lastName !== "" || mb_strlen($firstName) <= $firstMax) {
+            return [
+                $this->truncateAtWordBoundary($firstName, $firstMax),
+                $this->truncateAtWordBoundary($lastName, $lastMax),
+            ];
+        }
+
+        $words = preg_split('/\s+/', $firstName, -1, PREG_SPLIT_NO_EMPTY);
+        $first = "";
+
+        foreach ($words as $word) {
+            $candidate = $first === "" ? $word : "{$first} {$word}";
+
+            if (mb_strlen($candidate) > $firstMax) {
+                break;
+            }
+
+            $first = $candidate;
+        }
+
+        // Even the first word alone overflows firstMax: hard-truncate as a last resort.
+        if ($first === "") {
+            return [
+                mb_substr($firstName, 0, $firstMax),
+                $this->truncateAtWordBoundary(mb_substr($firstName, $firstMax), $lastMax),
+            ];
+        }
+
+        $rest = trim(mb_substr($firstName, mb_strlen($first)));
+
+        return [$first, $this->truncateAtWordBoundary($rest, $lastMax)];
+    }
+
+    private function truncateAtWordBoundary(string $value, int $max) : string
+    {
+        if (mb_strlen($value) <= $max) {
+            return $value;
+        }
+
+        $truncated = mb_substr($value, 0, $max);
+        $lastSpace = mb_strrpos($truncated, ' ');
+
+        return $lastSpace !== false ? rtrim(mb_substr($truncated, 0, $lastSpace)) : $truncated;
     }
 
     private function extractMessage(array $body): string

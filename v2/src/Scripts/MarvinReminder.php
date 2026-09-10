@@ -43,6 +43,7 @@ declare(strict_types=1);
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Core\Container;
 use Pmsrapi\V2\Services\ChatTranscriptService;
+use Pmsrapi\V2\Services\ClientService;
 use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\AI\AnthropicClient;
 use Plugins\Whatsapp\AI\MarvinTool;
@@ -76,6 +77,7 @@ $logger = $container->get(Logger::class);
 $anthropic = $container->get(AnthropicClient::class);
 $gateway = $container->get(WhatsappGateway::class);
 $transcripts = $container->get(ChatTranscriptService::class);
+$clients = $container->get(ClientService::class);
 
 $reminderEnabled = $config->secret('marvin.reminder.enabled', false);
 
@@ -189,53 +191,23 @@ function textOf(array $body): string
 }
 
 /**
- * The shopper's own most recent line, for language detection only — never
- * their question or the full thread, or the model has something to "answer".
- *
- * @param array<string, mixed> $conversation
+ * Ask Marvin's model for a short check-in nudge, in the language on file for
+ * this phone number — clients_data.language, the same column the live chat
+ * flow trusts (see ClientService::getClientLanguage) — rather than guessing
+ * from a text sample: a reminder fires precisely when the shopper has gone
+ * quiet, so there may be no recent inbound message to infer a language from.
  */
-function lastCustomerText(array $conversation): ?string
+function reminderText(string $phone, Config $config, AnthropicClient $anthropic, ClientService $clients, Logger $logger): string
 {
-    $messages = $conversation['data']['messages'] ?? null;
-
-    if (!is_array($messages)) {
-        return null;
-    }
-
-    for ($i = count($messages) - 1; $i >= 0; $i--) {
-        $entry = $messages[$i];
-
-        if (!is_array($entry) || ($entry['direction'] ?? null) !== 'in') {
-            continue;
-        }
-
-        $text = is_string($entry['message'] ?? null) ? trim($entry['message']) : '';
-
-        if ($text !== '') {
-            return $text;
-        }
-    }
-
-    return null;
-}
-
-/**
- * Ask Marvin's model for a short check-in nudge in the shopper's own language.
- *
- * @param array<string, mixed> $conversation
- */
-function reminderText(array $conversation, Config $config, AnthropicClient $anthropic, Logger $logger): string
-{
-    $sample = lastCustomerText($conversation);
-
-    if ($sample === null) {
-        return FALLBACK_TEXT;
-    }
+    $language = $clients->getClientLanguage($phone);
 
     try {
         $body = $anthropic->messages(
-            [['role' => 'user', 'content' => "Language sample only, not a question: \"{$sample}\""]],
-            [['type' => 'text', 'text' => getPrompt($config)]],
+            [['role' => 'user', 'content' => 'Write the check-in reminder now.']],
+            [
+                ['type' => 'text', 'text' => getPrompt($config)],
+                ['type' => 'text', 'text' => "Write the reminder in the language with ISO 639-1 code \"{$language}\"."],
+            ],
         );
 
         $text = textOf($body);
@@ -255,6 +227,7 @@ function run(
     AnthropicClient $anthropic,
     WhatsappGateway $gateway,
     ChatTranscriptService $transcripts,
+    ClientService $clients,
 ): void {
     $dir = conversationsDirFor($shopId, $config);
 
@@ -289,7 +262,7 @@ function run(
             continue;
         }
 
-        $text = reminderText($transcript, $config, $anthropic, $logger);
+        $text = reminderText($phone, $config, $anthropic, $clients, $logger);
 
         try {
             $gateway->sendText($phone, $text);
@@ -332,4 +305,4 @@ function getPrompt(Config $config): string
     return trim($cts);
 }
 
-run($shopId, $config, $logger, $anthropic, $gateway, $transcripts);
+run($shopId, $config, $logger, $anthropic, $gateway, $transcripts, $clients);

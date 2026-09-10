@@ -25,6 +25,22 @@ final class LanguageHelper
     private const CACHE_TTL_SECONDS = 60 * 60 * 24; // 24 hours
 
     private const TRANSLATIONS = [
+        'welcome' => [
+            'en' => "Hi, welcome to {{SHOP_NAME}}!",
+            'nl' => "Hoi, welkom bij {{SHOP_NAME}}!",
+            'tr' => "Merhaba, {{SHOP_NAME}}'e hoş geldiniz!",
+            'es' => "¡Hola, bienvenido a {{SHOP_NAME}}!",
+            'de' => "Hallo, willkommen bei {{SHOP_NAME}}!",
+            'fr' => "Bonjour, bienvenue chez {{SHOP_NAME}} !",
+        ],
+        'welcome_wine' => [
+            'en' => "Hi, welcome to {{SHOP_NAME}}!\nOrdering is very easy: you just tell me what you're looking for and your specific preferences, and I'll give you a few suggestions and add it to your basket if needed. Tell me when you're done, and then I'll give you a link to check out.",
+            'nl' => "Hoi, welkom bij {{SHOP_NAME}}!\nBestellen gaat heel makkelijk: jij vertelt me gewoon waar je naar op zoek bent en je specifieke wensen, en ik doe je een paar voorstellen en voeg het eventueel toe aan je mandje. Zeg me wanneer je klaar bent, en dan geef ik je een link om af te rekenen.",
+            'tr' => "Merhaba, {{SHOP_NAME}}'e hoş geldiniz!\nSipariş vermek çok kolay: sadece ne aradığınızı ve özel tercihlerinizi söyleyin, size birkaç öneri sunayım ve gerekirse sepetinize ekleyeyim. Bittiğinizde bana söyleyin, ardından ödeme yapmanız için bir bağlantı göndereyim.",
+            'es' => "¡Hola, bienvenido a {{SHOP_NAME}}!\nHacer un pedido es muy fácil: solo dime lo que buscas y tus preferencias específicas, y te daré algunas sugerencias y las añadiré a tu cesta si es necesario. Avísame cuando hayas terminado y te enviaré un enlace para finalizar la compra.",
+            'de' => "Hallo, willkommen bei {{SHOP_NAME}}!\nBestellen ist ganz einfach: Sag mir einfach, wonach du suchst und welche besonderen Vorlieben du hast, und ich gebe dir ein paar Vorschläge und lege sie bei Bedarf in deinen Warenkorb. Sag mir Bescheid, wenn du fertig bist, dann schicke ich dir einen Link zum Bezahlen.",
+            'fr' => "Bonjour, bienvenue chez {{SHOP_NAME}} !\nCommander est très simple : dites-moi simplement ce que vous cherchez et vos préférences spécifiques, et je vous ferai quelques suggestions et les ajouterai à votre panier si besoin. Dites-moi quand vous avez terminé, et je vous enverrai un lien pour finaliser votre commande.",
+        ],
         'the_usual' => [
             'en' => 'The usual',
             'nl' => 'Het vaste',
@@ -112,6 +128,14 @@ final class LanguageHelper
             'es' => '¿Quieres estar al día de todas nuestras ofertas, especiales del día y actualizaciones del menú? Entonces regístrate en nuestro canal de WhatsApp',
             'de' => 'Möchtest du über all unsere Angebote, Tagesspecials und Menü-Updates auf dem Laufenden bleiben? Dann melde dich für unseren WhatsApp-Kanal an',
             'fr' => 'Souhaitez-vous rester informé de toutes nos offres, plats du jour et mises à jour du menu ? Alors inscrivez-vous à notre chaîne WhatsApp',
+        ],
+        'channel_invitation_wine' => [
+            'en' => 'Would you like to stay up to date on all our offers, special wines, and tastings? Then sign up now for our WhatsApp channel.',
+            'nl' => 'Wil je op de hoogte blijven van al onze aanbiedingen, speciale wijnen en proeverijen? Meld je dan nu aan voor ons WhatsApp-kanaal.',
+            'tr' => 'Tüm fırsatlarımızdan, özel şaraplarımızdan ve tadım etkinliklerimizden haberdar olmak ister misiniz? O zaman hemen WhatsApp kanalımıza kaydolun.',
+            'es' => '¿Quieres estar al día de todas nuestras ofertas, vinos especiales y catas? Entonces regístrate ahora en nuestro canal de WhatsApp.',
+            'de' => 'Möchtest du über all unsere Angebote, besonderen Weine und Verkostungen auf dem Laufenden bleiben? Dann melde dich jetzt für unseren WhatsApp-Kanal an.',
+            'fr' => 'Souhaitez-vous rester informé de toutes nos offres, vins spéciaux et dégustations ? Alors inscrivez-vous dès maintenant à notre chaîne WhatsApp.',
         ],
         'make_selection' => [
             'en' => 'Please make your selection below',
