@@ -40,6 +40,8 @@ class TranscribeService
 
         $this->pathToFile = $pathToFile;
 
+        $this->logger->error("transcribe file", ["path" => $pathToFile]);
+        
         if( trim($this->pathToFile) === ""){
             $this->logger->error("transcribe service", ["file path" => "Invalid file path: $this->pathToFile"]);
             throw new ValidationException(["file path" => "Invalid file path provided for transcribe service!"]);

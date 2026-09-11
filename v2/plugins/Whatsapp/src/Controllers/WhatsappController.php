@@ -47,6 +47,8 @@ final class WhatsappController
     private string $clientPhone  = "";
     private ?string $clientName  = "";
 
+    private CONST ASSORTMENT_SHOP_TYPES = [1,2];
+
     private bool $isNewClient = false;
 
     private ?string $conversationLanguage = null; //default language;
@@ -171,7 +173,7 @@ final class WhatsappController
             MarvinTool::GetUsualForUser->value => $this->ctaWithUsualOrder($reply),
             MarvinTool::GetLastOrder->value => $this->ctaWithLastOrder($reply),
             MarvinTool::FilterProducts->value => $this->ctaWithProducts($reply),
-            MarvinTool::CheckoutOrder->value => $this->draftStatus($reply),
+            MarvinTool::CheckoutOrder->value => $this->draftStatus($reply, checkout: true),
             MarvinTool::AddToOrder->value => $this->draftStatus($reply),
             MarvinTool::RemoveFromOrder->value => $this->draftStatus($reply),
             MarvinTool::GetCart->value => $this->sendCartStatus($reply),
@@ -187,7 +189,7 @@ final class WhatsappController
      * off the cart the phone number already owns server side, so the web
      * front end picks it straight up — nothing to encode in the URL.
      */
-    private function draftStatus(array $reply) : array
+    private function draftStatus(array $reply, bool $checkout = false) : array
     {
         if( !isset($reply["message"])){
             throw new ApiException("Marvin did not return a message or order history to send!");
@@ -195,7 +197,15 @@ final class WhatsappController
 
         try {
 
-            $this->sendMenuLink($reply["message"], $this->shopLink());
+            $shopLink = $checkout ? $this->shopLinkWithCheckout() : $this->shopLink();
+
+            $buttonText = $checkout ? $this->language->translate("order", $this->conversationLanguage)
+                : null;
+
+            $footerText = $checkout ? $this->language->translate("click_to_order", $this->conversationLanguage)
+                : null;
+
+            $this->sendMenuLink($reply["message"], $shopLink, null, $footerText, $buttonText);
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context. Tagged with
@@ -468,7 +478,6 @@ final class WhatsappController
         $greeting = "";
         $channelInvitationMessage = "";
 
-        $channelLink = $this->config->secret("whatsapp.channel_link", "");
 
         try {
 
@@ -476,21 +485,13 @@ final class WhatsappController
 
             if(in_array(shop_id, $wineShops)){
                 $greeting = $this->language->translate("welcome_wine", $this->conversationLanguage, ["shop_name" => $shopName]);
-                $channelInvitationMessage = $this->language->translate("channel_invitation_wine", $this->conversationLanguage, ["shop_name" => $shopName]);
+                // $channelInvitationMessage = $this->language->translate("channel_invitation_wine", $this->conversationLanguage, ["shop_name" => $shopName]);
             }else{
                 $greeting = $this->language->translate("welcome", $this->conversationLanguage, ["shop_name" => $shopName]);
-                $channelInvitationMessage = $this->language->translate("channel_invitation", $this->conversationLanguage, ["shop_name" => $shopName]);
+                // $channelInvitationMessage = $this->language->translate("channel_invitation", $this->conversationLanguage, ["shop_name" => $shopName]);
             }
 
             $this->sendMenuLink($greeting, $this->shopLink(), $this->headerImage());
-
-            if( $channelLink !== ""){
-                $this->sendMenuLink(
-                    $channelInvitationMessage, 
-                    $channelLink,
-                    null,
-                    $this->language->translate("make_selection", $this->conversationLanguage));
-            }
 
             // Record the greeting so Marvin knows the shopper was already
             // welcomed and does not greet them a second time.
@@ -1014,15 +1015,26 @@ final class WhatsappController
         return $buttons;
     }
 
-    private function sendMenuLink(string $message, string $url, ?string $headerImage = null, ?string $footerText = null) : array
+    private function sendMenuLink(
+            string $message, 
+            string $url, 
+            ?string $headerImage = null, 
+            ?string $footerText = null,
+            ?string $buttonText = null) : array
     {
-        $footerText = $footerText === null ? $this->language->translate('open_menu_caption', $this->conversationLanguage)
-            : $footerText;
+
+        if($footerText === null || $footerText === ""){
+            $footerText = $this->isAssortment() ? $this->language->translate('open_assortment_caption', $this->conversationLanguage)
+                : $this->language->translate('open_menu_caption', $this->conversationLanguage);
+        }
+        $buttonText = $buttonText === null ? $this->language->translate('open', $this->conversationLanguage)
+            : $buttonText;
+            
 
         return $this->gateway->sendLink(
             $this->messagePayload["phone_number"],
             $message,
-            $this->language->translate('open', $this->conversationLanguage),
+            $buttonText,
             $url,
             $footerText,
             $headerImage,
@@ -1063,6 +1075,16 @@ final class WhatsappController
                 ]);
         }
 
+    }
+
+    private function isAssortment() : bool
+    {
+        $shopType = $this->shop["ol_shop_type"];
+        if($shopType == null){
+            return false;
+        }
+
+        return in_array((int)$shopType, self::ASSORTMENT_SHOP_TYPES);
     }
 
 }
