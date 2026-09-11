@@ -19,6 +19,7 @@ use Pmsrapi\V2\Services\ShopService;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
+use Plugins\Whatsapp\Support\ChannelInvitationLinker;
 
 /**
  * A plain controller. It returns a {@see Response} exactly like a core
@@ -39,6 +40,7 @@ final class CartController
         private readonly ShopService $shopService,
         private readonly LanguageHelper $language,
         private readonly ClientService $clientService,
+        private readonly ChannelInvitationLinker $channelInvitationLinker,
     ){}
 
     public function update(Request $request): Response
@@ -129,6 +131,8 @@ final class CartController
         $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
 
         $this->sendThankYouMessage($body["phonenumber"]);
+
+        $this->sendChannelInvitation($body["phonenumber"]);
 
         $this->printService->sendRequest($order["id"]);
 
@@ -314,6 +318,53 @@ final class CartController
             $this->logger->error("whatsapp: thank you message", ["error" => $ex->getMessage()]);
             return false;
         }
+    }
+
+
+    private function sendChannelInvitation(string $phone) : bool
+    {
+        try {
+            if ($this->alreadyFollowingChannel($phone)) {
+                return false;
+            }
+
+            $link = $this->channelInvitationLinker->buildLink((int) shop_id, $phone);
+
+            if ($link === null) {
+                return false;
+            }
+
+            $language = $this->clientService->getClientLanguage($phone);
+
+            $wineShops = $this->config->secret("wine_shops", []);
+            $messageKey = in_array((int) shop_id, $wineShops)
+                ? 'channel_invitation_wine'
+                : 'channel_invitation';
+
+            $this->whatsappGateway->sendLink(
+                $phone,
+                $this->language->translate($messageKey, $language),
+                $this->language->translate('follow_channel', $language),
+                $link,
+                $this->language->translate("make_selection", $language)
+            );
+
+            return true;
+        } catch (\Exception $ex) {
+            $this->logger->error("whatsapp: channel invitation", ["error" => $ex->getMessage()]);
+            return false;
+        }
+    }
+
+    private function alreadyFollowingChannel(string $phone) : bool
+    {
+        $client = $this->clientService->getByPhone($phone);
+        $metadata = is_string($client['metadata'] ?? null) ? json_decode($client['metadata'], true) : null;
+        $following = is_array($metadata['channels_following'] ?? null) ? $metadata['channels_following'] : [];
+
+        $channelLink = (string) $this->config->secret('whatsapp.channel_link', '');
+
+        return $channelLink !== '' && in_array($channelLink, $following, true);
     }
 
     private function trackOrderButton(string $language) : array

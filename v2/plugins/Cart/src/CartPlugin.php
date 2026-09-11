@@ -22,6 +22,7 @@ use Pmsrapi\V2\Services\PrintService;
 use Pmsrapi\V2\Services\ShopService;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
 use Plugins\Whatsapp\Support\LanguageHelper;
+use Plugins\Whatsapp\Support\ChannelInvitationLinker;
 use Plugins\Support\ShopContext;
 
 final class CartPlugin extends AbstractPlugin
@@ -40,6 +41,7 @@ final class CartPlugin extends AbstractPlugin
             $c->get(ShopService::class),
             $c->get(LanguageHelper::class),
             $c->get(ClientService::class),
+            $c->get(ChannelInvitationLinker::class),
         ));
     }
 
