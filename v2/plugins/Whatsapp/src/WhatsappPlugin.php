@@ -32,6 +32,7 @@ use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Services\TranscribeService;
 use Pmsrapi\V2\Cache\RedisClient;
 use Plugins\Whatsapp\Support\LanguageHelper;
+use Plugins\Whatsapp\Support\ChannelInvitationLinker;
 
 /**
  * WhatsApp inbound receiver.
@@ -72,6 +73,14 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(RedisClient::class),
             $c->get(Logger::class)
         ));
+
+        $registrar->singleton(
+            ChannelInvitationLinker::class,
+            static fn(Container $c): ChannelInvitationLinker => new ChannelInvitationLinker(
+                $c->get(Config::class),
+                $c->get(Logger::class),
+            ),
+        );
 
         $registrar->singleton(Marvin::class, static fn(Container $c): Marvin => new Marvin(
             $c->get(AnthropicClient::class),

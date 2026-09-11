@@ -161,6 +161,14 @@ final class LanguageHelper
             'de' => 'Möchtest du über all unsere Angebote, besonderen Weine und Verkostungen auf dem Laufenden bleiben? Dann melde dich jetzt für unseren WhatsApp-Kanal an.',
             'fr' => 'Souhaitez-vous rester informé de toutes nos offres, vins spéciaux et dégustations ? Alors inscrivez-vous dès maintenant à notre chaîne WhatsApp.',
         ],
+        'follow_channel' => [
+            'en' => 'FOLLOW',
+            'nl' => 'VOLGEN',
+            'tr' => 'TAKİP ET',
+            'es' => 'SEGUIR',
+            'de' => 'FOLGEN',
+            'fr' => 'SUIVRE',
+        ],
         'make_selection' => [
             'en' => 'Please make your selection below',
             'nl' => 'Maak hieronder je keuze',
