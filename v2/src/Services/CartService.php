@@ -25,12 +25,13 @@ final class CartService
 
     private const int CHECKED_OUT_STATUS_ID = 2;
 
-    private const int DELIVERY_LOGISTIC_TYPE = 2;
 
-    // Same figures ShopController::present() reports to the client — delivery
-    // is free once the cart's items_total clears the threshold.
-    private const float DELIVERY_FEE = 2.5;
-    private const float FREE_DELIVERY_THRESHOLD = 25.0;
+    public const int DELIVERY_LOGISTIC_TYPE = 2;
+
+
+    public const int DELIVERY_FEE_PRODUCT_ID = -1;
+    public const int DELIVERY_FEE_CATEGORY_ID = -1;
+    public const string DELIVERY_FEE_DESCRIPTION = 'Delivery Fee';
 
     private const array ADDRESS_FIELDS = ['country', 'state', 'city', 'zip', 'street', 'box'];
 
@@ -433,7 +434,7 @@ final class CartService
         }
 
         $order['items'] = $nestConfigs ? $this->nestConfigs($items) : $items;
-        $order['totals'] = $this->computeTotals($items, (int) ($order['logistics_type'] ?? 1));
+        $order['totals'] = $this->computeTotals($items);
 
         $this->repo->updateById($ordersTable, $orderId, ['total' => round($order['totals']["total"], 2), "display_currency_total" => $order['totals']["total"]]);
 
@@ -460,26 +461,24 @@ final class CartService
      * "subtotal" mirrors "items_total" until that data exists — both are
      * reported anyway so the response shape is stable for the client. Every
      * line's unit_price is VAT-inclusive, so "tax" is the portion already
-     * embedded in items_total (extracted, not added again); only delivery_fee
-     * is added on top to produce "total". delivery_fee only ever applies to a
-     * delivery order (logistics_type === self::DELIVERY_LOGISTIC_TYPE) — a
-     * pickup order, or one whose logistics_type isn't set yet, never gets one.
+     * embedded in items_total (extracted, not added again).
+     *
      *
      * @param list<array<string, mixed>> $items flat rows, as loaded above
      * @return array{subtotal: float, savings: float, items_total: float, delivery_fee: float, tax: float, total: float}
      */
-    private function computeTotals(array $items, int $logisticsType): array
+    private function computeTotals(array $items): array
     {
-        
+        $productLines = array_filter($items, static fn(array $item): bool => !self::isDeliveryFeeLine($item));
+
         $itemsTotal = array_reduce(
-            $items,
+            $productLines,
             static fn(float $carry, array $item): float => $carry + ((float) $item['unit_price'] * (float) $item['quantity']),
             0.0,
         );
 
-
         $tax = array_reduce(
-            $items,
+            $productLines,
             static function (float $carry, array $item): float {
                 $lineTotal = (float) $item['unit_price'] * (float) $item['quantity'];
                 $vatRate = (float) $item['vat_percentage'] / 100;
@@ -489,17 +488,52 @@ final class CartService
             0.0,
         );
 
-        $isDelivery = $logisticsType === self::DELIVERY_LOGISTIC_TYPE;
-        $deliveryFee = $isDelivery && $itemsTotal <= self::FREE_DELIVERY_THRESHOLD ? self::DELIVERY_FEE : 0.0;
+        $deliveryFee = array_reduce(
+            $items,
+            static fn(float $carry, array $item): float => $carry
+                + (self::isDeliveryFeeLine($item) ? (float) $item['unit_price'] * (float) $item['quantity'] : 0.0),
+            0.0,
+        );
+
         $itemsTotal = round($itemsTotal, 2);
 
         return [
-            'subtotal'     => round($itemsTotal - $tax,2),
+            'subtotal'     => round($itemsTotal - $tax, 2),
             'savings'      => 0.0,
             'items_total'  => $itemsTotal,
-            'delivery_fee' => $deliveryFee,
+            'delivery_fee' => round($deliveryFee, 2),
             'tax'          => round($tax, 2),
             'total'        => round($itemsTotal + $deliveryFee, 2),
+        ];
+    }
+
+    /** Identifies a row as the synthetic delivery-fee line, see DELIVERY_FEE_* above. */
+    private static function isDeliveryFeeLine(array $item): bool
+    {
+        return (int) ($item['product_id'] ?? 0) === self::DELIVERY_FEE_PRODUCT_ID
+            && (int) ($item['category_id'] ?? 0) === self::DELIVERY_FEE_CATEGORY_ID;
+    }
+
+    /**
+     * order_items_active columns for a synthetic delivery-fee line (minus
+     * order_id, which only the caller knows). Not taxed — vat_percentage 0 —
+     * matching the old computed delivery_fee, which was likewise added on top
+     * without VAT extraction.
+     *
+     * @return array<string, mixed>
+     */
+    public function deliveryFeeLineColumns(float $fee): array
+    {
+        return [
+            'product_id'        => self::DELIVERY_FEE_PRODUCT_ID,
+            'category_id'       => self::DELIVERY_FEE_CATEGORY_ID,
+            'item_description'  => self::DELIVERY_FEE_DESCRIPTION,
+            'unit_price'        => $fee,
+            'vat_percentage'    => 0,
+            'quantity'          => 1,
+            'campaign_id'       => null,
+            'product_reference' => null,
+            'parent_id'         => null,
         ];
     }
 

@@ -9,6 +9,8 @@ use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Exception\ServiceException;
+use Pmsrapi\V2\Support\Logger;
+use Plugins\Shop\Services\ShopService;
 
 /**
  * Replaces a cart's entire contents with the given items in one call:
@@ -20,6 +22,8 @@ final class CartSyncService
     public function __construct(
         private readonly Repository $repo,
         private readonly CartService $cart,
+        private readonly ShopService $shopService,
+        private readonly Logger $logger,
         private readonly RedisLock $lock,
     ) {}
 
@@ -77,10 +81,70 @@ final class CartSyncService
                 $this->insertLine($orderId, $item, null);
             }
 
+            $this->addDeliveryFee($order, $items);
+
             return $this->cart->withItemsAndTotal($orderId, [], false);
         } finally {
             $this->lock->release($lockKey);
         }
+    }
+
+    private function addDeliveryFee(array $order, array $items): void
+    {
+        if ((int) $order['logistics_type'] !== CartService::DELIVERY_LOGISTIC_TYPE) {
+            return;
+        }
+
+        $shop = $this->shopService->find($this->shopId());
+
+        if ($shop === null) {
+            $this->logger->error('add_delivery_fee', ['shop' => 'Shop not found']);
+            throw new ServiceException('Error in adding delivery fee. Shop not found!');
+        }
+
+        $shopInfo = $this->shopService->getShopInfo($shop);
+        $deliveryFee = $shopInfo['delivery_fee'];
+
+        if ($deliveryFee === null) {
+            $this->logger->error('add_delivery_fee', ['delivery_fee' => 'Shop does not have a delivery fee!']);
+            throw new ServiceException('Error in adding delivery fee. Shop has no delivery fee configured!');
+        }
+
+        $threshold = (float) ($shopInfo['free_delivery_threshold'] ?? 0);
+
+        if ($this->itemsTotal($items) > $threshold) {
+            return;
+        }
+
+        $this->repo->insertRow($this->orderItemsTable(), [
+            'order_id' => (int) $order['id'],
+            ...$this->cart->deliveryFeeLineColumns((float) $deliveryFee),
+        ]);
+    }
+
+    /**
+     * Sums quantity*unit_price across $items and their nested "configs",
+     * mirroring exactly what insertLine() just persisted (same zero-quantity
+     * skip) — without a DB round trip to re-read it.
+     *
+     * @param list<array<string, mixed>> $items
+     */
+    private function itemsTotal(array $items): float
+    {
+        $total = 0.0;
+
+        foreach ($items as $item) {
+            $quantity = max(0, (int) ($item['quantity'] ?? 0));
+            $total += $quantity * (float) ($item['unit_price'] ?? 0);
+
+            $configs = $item['configs'] ?? [];
+
+            if (is_array($configs)) {
+                $total += $this->itemsTotal($configs);
+            }
+        }
+
+        return $total;
     }
 
     private function wipeLines(int $orderId): void

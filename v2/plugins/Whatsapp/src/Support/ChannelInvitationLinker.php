@@ -10,7 +10,7 @@ use RuntimeException;
 
 final class ChannelInvitationLinker
 {
-    private const int DEFAULT_TTL_SECONDS = 14 * 24 * 60 * 60;
+    private const int DEFAULT_TTL_SECONDS = 20 * 60;
 
     public function __construct(
         private readonly Config $config,
@@ -31,11 +31,10 @@ final class ChannelInvitationLinker
             return null;
         }
 
-        $expiresAt = time() + $ttlSeconds;
-        $signature = hash_hmac('sha256', "{$shopId}:{$phone}:{$expiresAt}", $signingSecret);
+        $signature = hash_hmac('sha256', "{$shopId}:{$phone}", $signingSecret);
 
         try {
-            $this->recordInvite($invitationsPath, $shopId, $phone);
+            $this->recordInvite($invitationsPath, $shopId, $phone, $ttlSeconds);
         } catch (RuntimeException $e) {
             $this->logger->error('channel_follow: could not write invitations ledger', [
                 'error' => $e->getMessage(),
@@ -46,11 +45,11 @@ final class ChannelInvitationLinker
 
         return rtrim($invitationUri, '/') . '/?shop_id=' . $shopId
             . '&phone=' . urlencode($phone)
-            . '&exp=' . $expiresAt
             . '&sig=' . $signature;
     }
 
-    private function recordInvite(string $path, int $shopId, string $phone): void
+
+    private function recordInvite(string $path, int $shopId, string $phone, int $ttlSeconds): void
     {
         $handle = fopen($path, 'c+');
 
@@ -72,6 +71,7 @@ final class ChannelInvitationLinker
                 'shop_id' => $shopId,
                 'phone' => $phone,
                 'invited_at' => date('c'),
+                'expires_at' => date('c', time() + $ttlSeconds),
                 'clicked_at' => $ledger[$key]['clicked_at'] ?? null,
             ];
 

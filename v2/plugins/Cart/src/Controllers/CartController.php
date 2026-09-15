@@ -81,7 +81,6 @@ final class CartController
         if(isset($body["logistics_type"]) && ($body["logistics_type"] === 1 || $body["logistics_type"] === 2)){
             $logistisc = (int)$body["logistics_type"];
         }
-
         // $result = $this->cartService->updateCart($body["items"], $body["phonenumber"], $logistisc);
 
         $result = $this->cartSyncService->replaceCart($body["items"], $body["phonenumber"], $logistisc);
