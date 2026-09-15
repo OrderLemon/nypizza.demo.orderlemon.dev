@@ -13,6 +13,8 @@ declare(strict_types=1);
  * dropping namespaced classes under v2/src/ and registering them here or
  * resolving them where needed.
  */
+
+use Plugins\Shop\Services\ShopService as ServicesShopService;
 use Pmsrapi\V2\Cache\QueryCache;
 use Pmsrapi\V2\Cache\RateLimiter;
 use Pmsrapi\V2\Cache\RedisClient;
@@ -260,6 +262,8 @@ $container->singleton(CartService::class, static fn(Container $c): CartService =
 $container->singleton(CartSyncService::class, static fn(Container $c): CartSyncService => new CartSyncService(
     $c->get(Repository::class),
     $c->get(CartService::class),
+    $c->get(ServicesShopService::class),
+    $c->get(Logger::class),
     $c->get(RedisLock::class),
 ));
 

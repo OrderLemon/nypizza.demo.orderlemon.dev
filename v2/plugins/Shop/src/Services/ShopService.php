@@ -23,6 +23,22 @@ final class ShopService
         private readonly Repository $repo,
     ) {}
 
+    public function getShopInfo(array $shop) : array
+    {
+        return [
+            'id' => $shop['id'],
+            'name' => $shop['name'],
+            'company_id' => $shop['company_id'],
+            'phonenumber' => $shop['phonenumber'],
+            'enabled' => $shop['enabled'],
+            "min_pickup_minutes" => 20,
+            "min_delivery_minutes" => 45,
+            "currency" => "EUR",
+            "default_vat_rate" => 0.06,
+            "delivery_fee" => 2.5,
+            "free_delivery_threshold" => 25
+        ];
+    }
     /**
      * Find the enabled shop whose account number matches $phone.
      *
