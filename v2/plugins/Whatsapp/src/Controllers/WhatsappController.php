@@ -166,6 +166,16 @@ final class WhatsappController
             language: $this->conversationLanguage,
         );
 
+        // detect_language may have run alongside another tool this turn (e.g.
+        // a language switch noticed while also fetching the cart) — "type"
+        // only reflects whichever tool's attachment won the single slot, so
+        // the language switch must be applied here, independent of "type",
+        // or captions/buttons below would render in the stale language even
+        // though the DB was already updated.
+        if (!empty($reply["language"])) {
+            $this->conversationLanguage = $reply["language"];
+        }
+
         return match ($reply["type"] ?? '') {
             'text' => $this->sendMarvinText($reply["message"]),
             MarvinTool::TrackOrder->value => $this->sendTrackingLocation($reply),
