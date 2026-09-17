@@ -92,6 +92,7 @@ class TranscribeService
                 "http_status" => $statusCode,
                 "curl_error" => $curlError,
             ]);
+            $this->logger->error("Error downloading the file.", ["file" => $source]);
             throw new ServiceException("Unable to download audio file for transcription.");
         }
 
