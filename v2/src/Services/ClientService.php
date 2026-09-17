@@ -38,7 +38,7 @@ class ClientService
     /**
      * @return array<string, mixed>|null the upserted client record
      */
-    public function upsertClient(array $data): ?array
+    public function upsertShopClient(array $data): ?array
     {
         // date_added must not be in updateColumns: it's a "first seen" stamp,
         // not a "last seen" one, so an existing client's date must stay put.
@@ -238,31 +238,35 @@ class ClientService
         );
     }
 
-    public function getOrInsertGlobalClient(string $phoneNumber, array $data): ?array
+    public function getOrInsertClientAndData(string $phoneNumber, array $data): ?array
     {
         try{
-            $client = $this->upsertGlobalClient($phoneNumber, $data);
+            $this->upsertClients($phoneNumber,$data);
+            $globalResult = $this->upsertClientData($phoneNumber, $data);
         }catch(Exception $ex){
             $this->logger->error("error upserting global client", ["error" => $ex->getMessage()]);
             throw new ServiceException("Failed to upsert global client for phone number: $phoneNumber");
         }
 
-        if ($client === null) {
+        if ($globalResult === null) {
             $this->logger->error("error upserting global client");
             throw new ServiceException("Failed to upsert global client for phone number: $phoneNumber");
         }
 
-        $client = $client['record'] ?? null;
-        
-        //shop clients require full_name
+        $client = $globalResult['record'] ?? null;
+
         $client["full_name"] = trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''));
         $client["zip"] = $client["cp"] ?? null;
 
-        //also insert in the clients_{shop_id} table
-        $upsert = $this->upsertClient($client);
+        $upsert = $this->upsertShopClient($client);
 
-        return ["action" => $upsert["action"], "record" => $client];
+        return [
+            "new_ol_client"   => $globalResult["action"] === "inserted",
+            "new_shop_client" => $upsert["action"] === "inserted",
+            "record" => $client,
+        ];
     }
+
 
     public function getGlobalClient(string $phoneNumber): ?array
     {
@@ -281,9 +285,19 @@ class ClientService
         return $result;
     }
 
-    public function upsertGlobalClient(string $phoneNumber, array $data): ?array
+    public function upsertClientData(string $phoneNumber, array $data): ?array
     {
         $result = $this->repo->upsert('clients_data', [
+            'phonenumber' => $phoneNumber,
+            ...$data,
+        ], updateColumns: array_keys($data));
+
+        return $result;
+    }
+
+    public function upsertClients(string $phoneNumber, array $data): ?array
+    {
+        $result = $this->repo->upsert('clients', [
             'phonenumber' => $phoneNumber,
             ...$data,
         ], updateColumns: array_keys($data));

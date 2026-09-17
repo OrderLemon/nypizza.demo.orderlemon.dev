@@ -123,7 +123,7 @@ final class WhatsappController
             ]);
         }
 
-        $this->logger->error("inbounde message received", $body);
+        // $this->logger->error("inbounde message received", $body);
 
         //get or insert client
         $this->handleCustomer();
@@ -717,7 +717,7 @@ final class WhatsappController
             return null;
         }
 
-        return $this->clientService->upsertClient(
+        return $this->clientService->upsertShopClient(
             [
                 "phonenumber" => $this->messagePayload["phone_number"],
                 "latitude" => $location["latitude"],
@@ -1048,31 +1048,43 @@ final class WhatsappController
     */
     private function handleCustomer() : void
     {
-        $clientResult = $this->clientService->getOrInsertGlobalClient(
+        $clientResult = $this->clientService->getOrInsertClientAndData(
             $this->messagePayload["phone_number"],
             [
                 "phonenumber" => $this->messagePayload["phone_number"],
                 "first_name" => $this->messagePayload["first_name"],
                 "last_name" => $this->messagePayload["last_name"],
+                "full_name" => $this->messagePayload["full_name"],
                 "date_added" => date('Y-m-d H:i:s'),
             ]);
 
-        $this->isNewClient = $clientResult["action"] === "inserted" ?? false;
+        $this->isNewClient = $clientResult["new_shop_client"];
 
         $this->conversationLanguage = $clientResult["record"]["language"];
-        
-        if($this->conversationLanguage === null){
+
+        if($clientResult["new_ol_client"]){
             //fallback is "en", so no empty results, safe to update global client
             $this->conversationLanguage = $this->language->detect(
                 $this->messagePayload["phone_number"],
                 $this->messagePayload["message"] ?? '');
 
-            //update the global client language
-            $this->clientService->upsertGlobalClient(
+            $this->logger->info("detected language", ["language" => $this->conversationLanguage, "message" => $this->messagePayload["message"]]);
+
+            //update the clients table. Otherwise a running script will 
+            //update the clients_data with the wrong language set in clients
+            $this->clientService->upsertClients(
+                $this->messagePayload["phone_number"],
+                [
+                    "full_name" => $this->messagePayload["full_name"],
+                    "language" => $this->conversationLanguage,
+                ]);
+   
+            $this->clientService->upsertClientData(
                 $this->messagePayload["phone_number"],
                 [
                     "language" => $this->conversationLanguage,
                 ]);
+
         }
 
     }

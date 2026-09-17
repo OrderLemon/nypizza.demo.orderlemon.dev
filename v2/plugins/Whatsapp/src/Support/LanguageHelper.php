@@ -74,12 +74,12 @@ final class LanguageHelper
             'fr' => "Désolé, je ne peux pas traiter votre message vocal pour le moment. Pourriez-vous plutôt l'écrire ?",
         ],
         'marvin_fallback' => [
-            'en' => "Sorry, I can't help you right now. A colleague will help you further: {{SUPPORT_1}} or {{SUPPORT_2}}",
-            'nl' => 'Sorry, ik kan je nu niet verder helpen. Een collega helpt je graag verder: {{SUPPORT_1}} of {{SUPPORT_2}}',
-            'tr' => 'Üzgünüm, şu anda sana yardımcı olamıyorum. Bir meslektaşım sana yardımcı olacak: {{SUPPORT_1}} veya {{SUPPORT_2}}',
-            'es' => 'Lo siento, no puedo ayudarte en este momento. Un compañero te ayudará: {{SUPPORT_1}} o {{SUPPORT_2}}',
-            'de' => 'Entschuldigung, ich kann dir gerade nicht weiterhelfen. Ein Kollege wird dir weiterhelfen: {{SUPPORT_1}} oder {{SUPPORT_2}}',
-            'fr' => "Désolé, je ne peux pas t'aider pour le moment. Un collègue t'aidera : {{SUPPORT_1}} ou {{SUPPORT_2}}",
+            'en' => "Sorry, I can't help you right now.",
+            'nl' => 'Sorry, ik kan je nu niet verder helpen.',
+            'tr' => 'Üzgünüm, şu anda sana yardımcı olamıyorum.',
+            'es' => 'Lo siento, no puedo ayudarte en este momento.',
+            'de' => 'Entschuldigung, ich kann dir gerade nicht weiterhelfen.',
+            'fr' => "Désolé, je ne peux pas t'aider pour le moment.",
         ],
         'track_order' => [
             'en' => 'Track my order',
@@ -200,11 +200,10 @@ final class LanguageHelper
      */
     public function detect(string $phone, string $sample): string
     {
-        $cached = $this->cachedLanguage($phone);
-        if ($cached !== null) {
-
-            return $cached;
-        }
+        // $cached = $this->cachedLanguage($phone);
+        // if ($cached !== null) {
+        //     return $cached;
+        // }
 
         $sample = trim($sample);
         if ($sample === '') {
