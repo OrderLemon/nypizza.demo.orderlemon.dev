@@ -295,27 +295,37 @@ final class MarvinTools
             [
                 'name'        => MarvinTool::DetectLanguage->value,
                 'description' =>
-                    'REQUIRED every time the shopper asks to change language, in addition to '
-                    . 'writing your reply in that language. Just answering in the new language is '
-                    . 'NOT enough and does not count as switching: this tool is the only thing that '
+                    'REQUIRED every time the shopper changes language, in addition to writing '
+                    . 'your reply in that language. Just answering in the new language is NOT '
+                    . 'enough and does not count as switching: this tool is the only thing that '
                     . 'makes the switch stick for their next message. Skip it and the shopper has '
                     . 'to ask again every single time, because nothing was actually remembered. '
-                    . 'Call this EVERY SINGLE TIME the shopper '
-                    . 'asks to change language — "let\'s change language", "can you talk in '
-                    . 'Spanish?", "in French please", "habla español", "actually, speak German" — '
-                    . 'with no exceptions: call it again even if they already asked to switch '
-                    . 'earlier in this same conversation, even if you already called this tool '
-                    . 'before, even if you believe you are already replying in the language they '
-                    . 'are naming. Never skip it because you think you already know the answer '
-                    . 'from earlier in the conversation — always call it fresh, on every such '
-                    . 'request, the same way you always call get_usual_for_user fresh. '
-                    . 'Detect the language they are asking FOR, not the language they wrote the '
-                    . 'request in: "can we speak Spanish?" means switch to Spanish even though the '
-                    . 'request is in English. '
-                    . 'Also call this whenever a message arrives in a different language than the '
-                    . 'one you have been replying in, so you switch to match them. '
+                    . 'There are two separate cases that both require this tool, every single time, '
+                    . 'with no exceptions: '
+                    . 'CASE 1 — explicit request: the shopper asks to change language. Examples: '
+                    . '"let\'s change language", "can you talk in Spanish?", "in French please", '
+                    . '"habla español", "actually, speak German", "can we just do English?", '
+                    . '"switch back to English". Detect the language they are asking FOR, not the '
+                    . 'language they wrote the request in: "can we speak Spanish?" means switch to '
+                    . 'Spanish even though the request itself is in English. English is a completely '
+                    . 'normal target here, just like any other language — a request to go back to '
+                    . 'English is a language change like any other and must call this tool. '
+                    . 'CASE 2 — silent switch: the shopper\'s message arrives in a different '
+                    . 'language than the one you have been replying in, with no explicit request at '
+                    . 'all. Call this tool to match them, in EITHER direction: if a shopper you\'ve '
+                    . 'been replying to in French suddenly writes in English, that is a language '
+                    . 'change too — call this tool with "en", the same way you would call it with '
+                    . '"fr" if they had switched the other way. Reverting to English is not a '
+                    . 'default or a fallback state you can skip the tool for — it is just another '
+                    . 'language value, and English is not a special case that this tool ignores. '
+                    . 'For both cases: call it again even if they already asked to switch earlier '
+                    . 'in this same conversation, even if you already called this tool before, even '
+                    . 'if you believe you are already replying in the language they are naming or '
+                    . 'writing in. Never skip it because you think you already know the answer from '
+                    . 'earlier in the conversation — always call it fresh, on every such change, the '
+                    . 'same way you always call get_usual_for_user fresh. '
                     . 'From your next reply onward, respond entirely in the detected language until '
-                    . 'they ask to switch again.',
+                    . 'the shopper changes language again.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => [
@@ -324,7 +334,9 @@ final class MarvinTools
                             'pattern'     => '^[a-z]{2}$',
                             'description' =>
                                 'The language to switch to, as its two-letter ISO 639-1 code '
-                                . '(e.g. "es" for Spanish, "fr" for French, "nl" for Dutch). '
+                                . '(e.g. "es" for Spanish, "fr" for French, "nl" for Dutch, "en" '
+                                . 'for English). English is a normal, expected value here — not a '
+                                . 'default to be assumed or a case to skip. '
                                 . 'Always the language being switched TO, never the language the '
                                 . 'shopper\'s request was written in.',
                         ],

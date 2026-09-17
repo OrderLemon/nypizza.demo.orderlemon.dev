@@ -202,8 +202,16 @@ final class Marvin
      * delivery view during this turn, so the controller knows to follow the text
      * with a location message.
      *
+     * "language" is folded in independently of "type": MarvinTools keeps only
+     * one attachment slot, so if detect_language ran alongside another tool in
+     * the same turn (e.g. a language switch noticed while also fetching the
+     * cart), that other tool's attachment wins the slot and would otherwise
+     * silently drop the language switch — leaving the controller's cached
+     * conversation language, and therefore this reply's buttons/captions,
+     * stuck one turn behind even though the DB was already updated.
+     *
      * @param array<string,mixed> $body the final API response
-     * @return array{type: string, message: string, tracking?: array<string,mixed>}
+     * @return array{type: string, message: string, language?: string, tracking?: array<string,mixed>}
      */
      private function replyFrom(array $body): array
     {
@@ -211,13 +219,20 @@ final class Marvin
         $attachment = $this->tools->attachment();
 
         if ($attachment === null) {
-            return ['type' => 'text', 'message' => $message];
+            $reply = ['type' => 'text', 'message' => $message];
+        } else {
+            $keys = array_keys($attachment);
+            $dataKey = end($keys);
+
+            $reply = ['type' => $attachment['type'], 'message' => $message, $dataKey => $attachment[$dataKey]];
         }
 
-        $keys = array_keys($attachment);
-        $dataKey = end($keys);
+        $language = $this->tools->detectedLanguage();
+        if ($language !== null) {
+            $reply['language'] = $language;
+        }
 
-        return ['type' => $attachment['type'], 'message' => $message, $dataKey => $attachment[$dataKey]];
+        return $reply;
     }
     
    
