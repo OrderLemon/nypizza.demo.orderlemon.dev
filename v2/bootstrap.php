@@ -270,6 +270,8 @@ $container->singleton(CartSyncService::class, static fn(Container $c): CartSyncS
 $container->singleton(PrintService::class, static fn(Container $c): PrintService => new PrintService(
     $c->get(Config::class),
     $c->get(Logger::class),
+    $c->get(RedisLock::class),
+    $c->get(Repository::class),
 ));
 
 $container->singleton(UsualOrderService::class, static fn(Container $c): UsualOrderService => new UsualOrderService(
