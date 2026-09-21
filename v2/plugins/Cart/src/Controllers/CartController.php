@@ -133,8 +133,12 @@ final class CartController
 
         $this->sendChannelInvitation($body["phonenumber"]);
 
-        $this->printService->sendRequest($order["id"]);
+        $printeRequest = $this->printService->sendRequest($order["id"]);
 
+        if($printeRequest){
+            $this->logger->info("Successfully printed for shop " . shop_id);
+        }
+        
         return Response::Ok(
             [
                 "status" => "success",
