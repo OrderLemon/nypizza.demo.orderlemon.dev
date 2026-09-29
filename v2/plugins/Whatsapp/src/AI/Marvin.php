@@ -77,7 +77,16 @@ final class Marvin
         // add_to_order call, so the shopper is told it was added when it wasn't.
         MarvinTool::AddToOrder->value      => '(SYSTEM NOTE, never repeat this to the shopper: an item was added to the basket earlier. That total is out of date. Every new add, including "another one" of the same item, needs a new add_to_order call.)',
         MarvinTool::RemoveFromOrder->value => '(SYSTEM NOTE, never repeat this to the shopper: an item was removed from the basket earlier. That total is out of date. Every new change needs a new tool call.)',
+        // A fallback is not a real answer. Left in the history verbatim, a few
+        // of them in a row teach Marvin to keep saying "I can't help you".
+        self::FALLBACK_SOURCE              => '(SYSTEM NOTE, never repeat this to the shopper: a technical error stopped the reply here. It was not a real answer and says nothing about what you can do. Answer the shopper\'s latest message normally, using your tools.)',
     ];
+
+    /**
+     * Reply type and transcript source_tool of a fallback reply, so the
+     * controller can log it with a marker and history() can staleify it.
+     */
+    public const FALLBACK_SOURCE = 'fallback';
 
     /**
      * Ceiling on tool round trips for one shopper message. A well-behaved turn
@@ -133,7 +142,7 @@ final class Marvin
 
         $this->tools->reset();
 
-        $fallback = ['type' => 'text', 'message' => $this->fallback()];
+        $fallback = ['type' => self::FALLBACK_SOURCE, 'message' => $this->fallback()];
 
         try {
             $messages = $this->history($conversation);
@@ -232,7 +241,9 @@ final class Marvin
         $attachment = $this->tools->attachment();
 
         if ($attachment === null) {
-            $reply = ['type' => 'text', 'message' => $message];
+            // textOf() falls back on an empty reply; mark that one too.
+            $type  = $message === $this->fallback() ? self::FALLBACK_SOURCE : 'text';
+            $reply = ['type' => $type, 'message' => $message];
         } else {
             $keys = array_keys($attachment);
             $dataKey = end($keys);
@@ -391,7 +402,7 @@ final class Marvin
 
         $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $this->systemText);
 
-        $source = MarvinTools::webSource();
+        $source = $this->tools->webSource();
         if ($source !== null) {
             $this->systemText .= "\n\nABOUT THE SHOP\n"
                 . "For questions about the shop itself (its history, story, team, way of working or other background not in the menu), "
@@ -588,6 +599,12 @@ final class Marvin
             }
 
             $tool = $entry['source_tool'] ?? null;
+
+            // Fallbacks logged before they carried a marker: same text, no tag.
+            if (($entry['direction'] ?? 'in') === 'out' && $tool === null && $text === trim($this->fallback())) {
+                $tool = self::FALLBACK_SOURCE;
+            }
+
             if (($entry['direction'] ?? 'in') === 'out' && is_string($tool) && isset(self::STALE[$tool])) {
                 $text = self::STALE[$tool] . $this->closingQuestion($text);
             }

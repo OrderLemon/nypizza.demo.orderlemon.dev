@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Plugins\Whatsapp\AI;
 
 use Plugins\Whatsapp\AI\MarvinTool;
+use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\TrackingService;
@@ -55,6 +56,7 @@ final class MarvinTools
         private readonly ClientService $clientService,
         private readonly CampaignNudge $campaignNudge,
         private readonly Logger $logger,
+        private readonly Config $config,
     ) {}
 
     /**
@@ -222,9 +224,13 @@ final class MarvinTools
                     . 'Always read the returned total back to the shopper. '
                     . 'If the reply has "campaign_nudges", the basket is one step away from a promotion: after '
                     . 'confirming the add, mention it in one short sentence: say what to add ("missing") '
-                    . 'and the deal price vs old_price, and ask if they want to add it. This question '
-                    . 'replaces "Want to finish your order now?" in that reply. If they say yes, call this '
-                    . 'tool again with a product_id from that entry\'s product_ids and the "add" quantity. '
+                    . 'and the deal price vs old_price, then end with a question that names the exact '
+                    . 'number and product from "add", e.g. "Want me to add 1 more Roombotercake?". This '
+                    . 'question replaces "Want to finish your order now?" in that reply. The number in '
+                    . 'the question is what gets added: a plain yes means call this tool again with a '
+                    . 'product_id from that entry\'s product_ids and exactly that quantity. The deal '
+                    . 'price covers everything the deal needs, including what is already in the basket, '
+                    . 'so never add the deal\'s full item count. '
                     . 'If there are no campaign_nudges, say nothing about deals. '
                     . 'Never say a discount was applied to the basket — the total does not include '
                     . 'it. Mention each campaign once per conversation; do not repeat it on later '
@@ -356,7 +362,7 @@ final class MarvinTools
             ],
         ];
 
-        $source = self::webSource();
+        $source = $this->webSource();
         if ($source !== null) {
             $tools[] = [
                 'type'               => 'web_fetch_20260209',
@@ -371,15 +377,21 @@ final class MarvinTools
     }
 
 
-    public static function webSource(): ?string
+    public function webSource(): ?string
     {
         if (!defined('shop_id') || !is_numeric(shop_id)) {
             return null;
         }
 
-        $sources = $this->config->secret("web_sources");
-        
-        return $sources[(int) shop_id] ?? null;
+        $sources = $this->config->secret("web_sources", []);
+
+        if (!is_array($sources)) {
+            return null;
+        }
+
+        $source = $sources[(int) shop_id] ?? null;
+
+        return is_string($source) && trim($source) !== '' ? $source : null;
     }
 
     /**
