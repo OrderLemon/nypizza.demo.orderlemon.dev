@@ -178,6 +178,9 @@ final class WhatsappController
 
         return match ($reply["type"] ?? '') {
             'text' => $this->sendMarvinText($reply["message"]),
+            // Sent like any text, but logged with a marker so the next turn's
+            // history shows it as an error, not as something Marvin said.
+            Marvin::FALLBACK_SOURCE => $this->sendMarvinText($reply["message"], Marvin::FALLBACK_SOURCE),
             MarvinTool::TrackOrder->value => $this->sendTrackingLocation($reply),
             MarvinTool::GreetWithUsual->value => $this->greetWithUsual($reply),
             MarvinTool::GetUsualForUser->value => $this->ctaWithUsualOrder($reply),
@@ -454,14 +457,14 @@ final class WhatsappController
         }
     }
 
-    private function sendMarvinText(string $marvinReplyMessage) : array
+    private function sendMarvinText(string $marvinReplyMessage, ?string $sourceTool = null) : array
     {
         try {
             $this->sendMenuLink($marvinReplyMessage, $this->shopLink());
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
-            $this->transcripts->append($this->messagePayload["phone_number"], $marvinReplyMessage, 'out', 'text');
+            $this->transcripts->append($this->messagePayload["phone_number"], $marvinReplyMessage, 'out', 'text', $sourceTool);
 
             return ['sent' => true];
         } catch (ApiException $e) {

@@ -62,7 +62,8 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(MenuService::class),
             $c->get(ClientService::class),
             $c->get(CampaignNudge::class),
-            $c->get(Logger::class)
+            $c->get(Logger::class),
+            $c->get(Config::class),
         ));
 
         $registrar->singleton(CampaignNudge::class, static fn(Container $c): CampaignNudge => new CampaignNudge(
