@@ -438,6 +438,12 @@ final class CartService
 
         $this->repo->updateById($ordersTable, $orderId, ['total' => round($order['totals']["total"], 2), "display_currency_total" => $order['totals']["total"]]);
 
+        // $order was read before this update, so its "total" is still the
+        // previous one. Callers (Marvin reads it back to the shopper) must get
+        // the total that was just written, not the one from before the change.
+        $order['total'] = round($order['totals']["total"], 2);
+        $order['display_currency_total'] = $order['totals']["total"];
+
         if(!$includeChanges){
             return $order;
         }

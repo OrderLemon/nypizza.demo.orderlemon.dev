@@ -20,6 +20,7 @@ use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\AnthropicClient;
 use Plugins\Whatsapp\AI\MarvinTools;
+use Plugins\Whatsapp\AI\CampaignNudge;
 use Pmsrapi\V2\Services\TrackingService;
 use Pmsrapi\V2\Services\ClientService;
 use Pmsrapi\V2\Services\ConversationService;
@@ -60,9 +61,14 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(CartService::class),
             $c->get(MenuService::class),
             $c->get(ClientService::class),
+            $c->get(CampaignNudge::class),
             $c->get(Logger::class)
         ));
- 
+
+        $registrar->singleton(CampaignNudge::class, static fn(Container $c): CampaignNudge => new CampaignNudge(
+            $c->get(MenuService::class)
+        ));
+
         $registrar->singleton(AnthropicClient::class, static fn(Container $c): AnthropicClient => new AnthropicClient(
             $c->get(Config::class),
             $c->get(Logger::class)
