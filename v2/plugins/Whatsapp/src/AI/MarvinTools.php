@@ -232,9 +232,11 @@ final class MarvinTools
                     . 'price covers everything the deal needs, including what is already in the basket, '
                     . 'so never add the deal\'s full item count. '
                     . 'If there are no campaign_nudges, say nothing about deals. '
-                    . 'Never say a discount was applied to the basket — the total does not include '
-                    . 'it. Mention each campaign once per conversation; do not repeat it on later '
-                    . 'adds unless the shopper asks.',
+                    . 'Once the basket completes a campaign, the discount is applied automatically: '
+                    . 'a line named after the campaign with a negative price appears, and the total '
+                    . 'already includes it. Only say a discount was applied when such a line is in '
+                    . 'the basket. Mention each campaign once per conversation; do not repeat it on '
+                    . 'later adds unless the shopper asks.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => [
@@ -715,9 +717,12 @@ final class MarvinTools
             }
 
             $lines[] = [
-                'line_id'  => (int) $line['id'],
-                'name'     => (string) $line['item_description'],
-                'quantity' => (int) $line['quantity'],
+                'line_id'     => (int) $line['id'],
+                'name'        => (string) $line['item_description'],
+                'quantity'    => (int) $line['quantity'],
+                // The cart splits a product into a line per campaign it's in
+                // plus one for the rest, so the same name can appear twice.
+                'campaign_id' => isset($line['campaign_id']) ? (int) $line['campaign_id'] : null,
                 'options'  => array_map(
                     static fn(array $c): string => (string) $c['item_description'],
                     $configs,

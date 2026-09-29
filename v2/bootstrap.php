@@ -51,6 +51,7 @@ use Pmsrapi\V2\Services\ConfigService;
 use Pmsrapi\V2\Services\ProductsService;
 use Pmsrapi\V2\Services\CategoryService;
 use Pmsrapi\V2\Services\CampaignService;
+use Pmsrapi\V2\Services\CampaignDiscountService;
 use Pmsrapi\V2\Services\TrackingService;
 use Pmsrapi\V2\Services\UsualOrderService;
 use Pmsrapi\V2\Services\ClientService;
@@ -257,6 +258,11 @@ $container->singleton(CartService::class, static fn(Container $c): CartService =
     $c->get(Logger::class),
     $c->get(ClientService::class),
     $c->get(ConversationService::class),
+    $c->get(CampaignDiscountService::class),
+));
+
+$container->singleton(CampaignDiscountService::class, static fn(Container $c): CampaignDiscountService => new CampaignDiscountService(
+    $c->get(MenuService::class),
 ));
 
 $container->singleton(CartSyncService::class, static fn(Container $c): CartSyncService => new CartSyncService(

@@ -77,11 +77,23 @@ final class CartSyncService
                 if (!is_array($item)) {
                     throw new ValidationException(['items' => 'Each cart item must be an object']);
                 }
+            }
 
+            // Campaign discount lines are the server's to decide — the web
+            // cart echoes back what it was last shown, so drop those and let
+            // applyCampaigns() recompute them from the product lines below.
+            $items = array_values(array_filter(
+                $items,
+                static fn(array $item): bool => !CampaignDiscountService::isDiscountLine($item),
+            ));
+
+            foreach ($items as $item) {
                 $this->insertLine($orderId, $item, null);
             }
 
             $this->addDeliveryFee($order, $items);
+
+            $this->cart->applyCampaigns($orderId);
 
             return $this->cart->withItemsAndTotal($orderId, [], false);
         } finally {

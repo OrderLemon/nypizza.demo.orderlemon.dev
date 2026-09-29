@@ -56,12 +56,13 @@ final class OrderBasket
      * row, distinguished from a normal line only by carrying a parent_id that
      * points at its host line's id. So this walks the flat list once to group
      * children under their parent, then fingerprints each top-level line by
-     * its own product_id/campaign_id/quantity plus its children's
-     * product_id:quantity pairs, sorted so option order never matters.
+     * its own product_id/quantity plus its children's product_id:quantity
+     * pairs, sorted so option order never matters. Campaign splits are folded
+     * back first, see withoutCampaigns().
      */
     public static function fingerprint(array $order): string
     {
-        $items = array_values(array_filter((array) ($order['items'] ?? []), 'is_array'));
+        $items = self::withoutCampaigns($order);
 
         $childrenByParent = [];
         foreach ($items as $item) {
@@ -124,7 +125,7 @@ final class OrderBasket
      */
     public static function basket(array $order): array
     {
-        $rows = array_values(array_filter((array) ($order['items'] ?? []), 'is_array'));
+        $rows = self::withoutCampaigns($order);
 
         $childrenByParent = [];
         foreach ($rows as $row) {
@@ -166,6 +167,71 @@ final class OrderBasket
         }
 
         return $items;
+    }
+
+    /**
+     * The order's rows with campaign bookkeeping undone. The cart splits a
+     * product's units into a line per campaign plus an untagged line
+     * (CartService::applyCampaigns()), so the same meal can be stored as
+     * "3× cake" or as "2× cake (campaign 5) + 1× cake" depending on which
+     * campaigns were live. Folds such lines back into one — same product,
+     * same configs — with campaign_id cleared, so a reorder never carries a
+     * stale campaign and "the usual" sees the same meal either way. The
+     * cart re-applies whatever campaigns are live when the reorder lands.
+     *
+     * @return list<array<string,mixed>> flat rows, configs still pointing at their host by parent_id
+     */
+    private static function withoutCampaigns(array $order): array
+    {
+        $rows = array_values(array_filter((array) ($order['items'] ?? []), 'is_array'));
+
+        $childrenByParent = [];
+        foreach ($rows as $row) {
+            $parentId = (int) ($row['parent_id'] ?? 0);
+            if ($parentId !== 0) {
+                $childrenByParent[$parentId][] = $row;
+            }
+        }
+
+        $hosts = [];      // family key => merged host row
+        $children = [];   // family key => the first host's config rows
+
+        foreach ($rows as $row) {
+            if ((int) ($row['parent_id'] ?? 0) !== 0) {
+                continue;
+            }
+
+            $configs = $childrenByParent[(int) ($row['id'] ?? 0)] ?? [];
+            $configIds = array_map(static fn(array $c): int => (int) ($c['product_id'] ?? 0), $configs);
+            sort($configIds);
+
+            // Discount / adjustment lines (product_id 0) keep their own row;
+            // callers already skip them.
+            $key = (int) ($row['product_id'] ?? 0) === 0
+                ? 'row:' . ($row['id'] ?? count($hosts))
+                : (int) $row['product_id'] . '|' . implode(',', $configIds);
+
+            if (isset($hosts[$key])) {
+                $hosts[$key]['quantity'] = (int) $hosts[$key]['quantity'] + (int) ($row['quantity'] ?? 0);
+                continue;
+            }
+
+            $hosts[$key] = [...$row, 'campaign_id' => null];
+            $children[$key] = $configs;
+        }
+
+        $out = [];
+
+        foreach ($hosts as $key => $host) {
+            $out[] = $host;
+
+            // A config's quantity tracks its host's, so it follows the merge.
+            foreach ($children[$key] as $config) {
+                $out[] = [...$config, 'quantity' => $host['quantity']];
+            }
+        }
+
+        return $out;
     }
 
     /** Human summary for the message body — not the button. */

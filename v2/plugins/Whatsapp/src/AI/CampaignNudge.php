@@ -21,8 +21,8 @@ use Pmsrapi\V2\Services\MenuService;
  * Marvin from pitching every campaign on every add.
  *
  * Pure: reads the menu, never the cart store, never a price the model supplied.
- * The cart does NOT apply campaign prices (CartService reports savings as 0), so
- * the result is a hint for Marvin to phrase, never a discount on the basket.
+ * The result is only a hint for Marvin to phrase — the discount itself is
+ * applied by CartService::applyCampaigns() once the basket qualifies.
  */
 final class CampaignNudge
 {
