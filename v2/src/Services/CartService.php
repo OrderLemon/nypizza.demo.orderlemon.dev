@@ -125,9 +125,9 @@ final class CartService
         $lines = $this->repo->selectRows($table, ['order_id' => $orderId]);
 
         try {
-            $plan = $this->campaignDiscounts->plan($lines);
+            $wanted = $this->campaignDiscounts->discountsFor($lines);
         } catch (ApiException $e) {
-            $this->logger->error('cart: campaigns unavailable, campaign lines left untouched', [
+            $this->logger->error('cart: campaigns unavailable, discount lines left untouched', [
                 'order_id' => $orderId,
                 'error'    => $e->getMessage(),
             ]);
@@ -135,17 +135,10 @@ final class CartService
             return [];
         }
 
-        $linesById = array_column($lines, null, 'id');
-
-        // Reshuffling units between a product's lines changes no quantity the
-        // shopper sees, so it isn't reported as a change — only the discount
-        // lines below are.
-        foreach ($plan['families'] as $family) {
-            $this->splitFamily($orderId, $family, $linesById);
-        }
-
-        $wanted = $plan['discounts'];
-        $changes = [];
+        // Like cart.ms's apply_promotions: drop every discount line and insert
+        // the ones the cart earns now. What each stood at before is kept so
+        // only real differences are reported, not the reinsert itself.
+        $before = [];
 
         foreach ($lines as $line) {
             if (!CampaignDiscountService::isDiscountLine($line)) {
@@ -153,127 +146,28 @@ final class CartService
             }
 
             $key = CampaignDiscountService::discountKey($line);
-            $want = $wanted[$key] ?? null;
-            // Claimed by this line — a second line with the same key finds
-            // nothing here and is deleted as a duplicate.
-            unset($wanted[$key]);
+            $before[$key] = ['line' => $line, 'quantity' => ($before[$key]['quantity'] ?? 0) + (int) $line['quantity']];
+            $this->repo->deleteById($table, (int) $line['id']);
+        }
 
-            $before = (int) $line['quantity'];
+        $changes = [];
 
-            if ($want === null) {
-                $this->repo->deleteById($table, (int) $line['id']);
-                $changes[] = $this->changeRecord($line, $before, 0);
-                continue;
-            }
-
+        foreach ($wanted as $key => $want) {
             $columns = $this->discountLineColumns($want);
+            $lineId = $this->repo->insertRow($table, [...$columns, 'order_id' => $orderId]);
+            $was = $before[$key]['quantity'] ?? 0;
+            unset($before[$key]);
 
-            // Same key means same campaign, product and amount already — only
-            // the count, label or VAT can have moved.
-            if ($before === $columns['quantity']
-                && (string) $line['item_description'] === $columns['item_description']
-                && (int) $line['vat_percentage'] === $columns['vat_percentage']) {
-                continue;
-            }
-
-            $this->repo->updateById($table, (int) $line['id'], $columns);
-
-            if ($before !== $columns['quantity']) {
-                $changes[] = $this->changeRecord(['id' => $line['id'], ...$columns], $before, $columns['quantity']);
+            if ($was !== $columns['quantity']) {
+                $changes[] = $this->changeRecord(['id' => $lineId, ...$columns], $was, $columns['quantity']);
             }
         }
 
-        foreach ($wanted as $want) {
-            $columns = $this->discountLineColumns($want);
-            $lineId = $this->repo->insertRow($table, [...$columns, 'order_id' => $orderId]);
-            $changes[] = $this->changeRecord(['id' => $lineId, ...$columns], 0, $columns['quantity']);
+        foreach ($before as ['line' => $line, 'quantity' => $was]) {
+            $changes[] = $this->changeRecord($line, $was, 0);
         }
 
         return $changes;
-    }
-
-    /**
-     * Rewrites one product family's lines (see {@see CampaignDiscountService})
-     * so there is exactly one line per campaign that takes some of its units,
-     * carrying that campaign_id, plus one untagged line for the rest.
-     *
-     * Lines are reused before anything is created, so ids stay put as long as
-     * possible: first a line already tagged with the right campaign, then any
-     * leftover line of the family (retagged). Only when the family has fewer
-     * lines than the split needs is a line cloned — configs and all. Leftover
-     * lines are deleted with their configs.
-     *
-     * @param array{line_ids: list<int>, split: array<int, int>} $family
-     * @param array<int|string, array<string, mixed>> $linesById
-     */
-    private function splitFamily(int $orderId, array $family, array $linesById): void
-    {
-        $unused = array_map(static fn(int $id): array => $linesById[$id], $family['line_ids']);
-        usort($unused, static fn(array $a, array $b): int => (int) $a['id'] <=> (int) $b['id']);
-
-        $template = $unused[0];
-        $split = array_filter($family['split'], static fn(int $quantity): bool => $quantity > 0);
-        $assigned = [];
-
-        foreach (array_keys($split) as $campaignId) {
-            foreach ($unused as $index => $line) {
-                if ((int) ($line['campaign_id'] ?? 0) === $campaignId) {
-                    $assigned[$campaignId] = $line;
-                    unset($unused[$index]);
-                    break;
-                }
-            }
-        }
-
-        foreach ($split as $campaignId => $quantity) {
-            if (isset($assigned[$campaignId])) {
-                continue;
-            }
-
-            $assigned[$campaignId] = array_shift($unused)
-                ?? $this->cloneLine($orderId, $template, $campaignId === 0 ? null : $campaignId, $quantity);
-        }
-
-        foreach ($assigned as $campaignId => $line) {
-            $quantity = $split[$campaignId];
-            $tag = $campaignId === 0 ? null : $campaignId;
-            $current = isset($line['campaign_id']) ? (int) $line['campaign_id'] : null;
-
-            if ((int) $line['quantity'] === $quantity && $current === $tag) {
-                continue;
-            }
-
-            $this->repo->updateById($this->orderItemsTable(), (int) $line['id'], [
-                'quantity'    => $quantity,
-                'campaign_id' => $tag,
-            ]);
-            $this->syncConfigQuantities((int) $line['id'], $quantity);
-        }
-
-        foreach ($unused as $line) {
-            $this->deleteLine((int) $line['id']);
-        }
-    }
-
-    /**
-     * Inserts a copy of $source — and of every config attached to it — at
-     * $quantity, tagged with $campaignId.
-     *
-     * @return array<string, mixed> the new host row
-     */
-    private function cloneLine(int $orderId, array $source, ?int $campaignId, int $quantity): array
-    {
-        $table = $this->orderItemsTable();
-        $copy = static fn(array $row, array $overrides): array => [...array_diff_key($row, ['id' => true]), ...$overrides];
-
-        $host = $copy($source, ['order_id' => $orderId, 'quantity' => $quantity, 'campaign_id' => $campaignId]);
-        $hostId = $this->repo->insertRow($table, $host);
-
-        foreach ($this->repo->selectRows($table, ['parent_id' => (int) $source['id']]) as $config) {
-            $this->repo->insertRow($table, $copy($config, ['parent_id' => $hostId, 'quantity' => $quantity]));
-        }
-
-        return ['id' => $hostId, ...$host];
     }
 
     private function discountLineColumns(array $discount): array
@@ -306,7 +200,7 @@ final class CartService
 
     /**
      * Finds the line this item matches: by "id" if given (scoped to this
-     * order), else by product_id/parent_id among lines that also
+     * order), else by product_id/campaign_id/parent_id among lines that also
      * carry the exact same set of configs (toppings) — callers like Marvin's
      * "add to order" never know a line's id, so without this a repeat "add
      * another one" of the same customized product would always insert a new
@@ -341,29 +235,15 @@ final class CartService
             return ['line' => $line, 'completingConfigs' => false];
         }
 
-        $where = [
-            'order_id'   => $orderId,
-            'product_id' => (int) $item['product_id'],
-            'parent_id'  => $item['parent_id'] ?? null,
-        ];
-
-        // On a product line campaign_id is the cart's own bookkeeping —
-        // applyCampaigns() splits a product's units into campaign and
-        // untagged lines — not part of the item's identity, so it can't be a
-        // match condition: once a placeholder line got tagged, the follow-up
-        // "add with configs" would never find it again. Only a discount line
-        // is identified by its campaign.
-        if (CampaignDiscountService::isDiscountLine($item)) {
-            $where['campaign_id'] = (int) $item['campaign_id'];
-        }
-
-        $candidates = $this->repo->selectRows($this->orderItemsTable(), $where, orderBy: 'id:desc');
-
-        // An untagged line first: it's where a new unit lands anyway, so
-        // bumping it leaves the campaign lines as they are.
-        usort(
-            $candidates,
-            static fn(array $a, array $b): int => isset($a['campaign_id']) <=> isset($b['campaign_id']),
+        $candidates = $this->repo->selectRows(
+            $this->orderItemsTable(),
+            [
+                'order_id'    => $orderId,
+                'product_id'  => (int) $item['product_id'],
+                'campaign_id' => $item['campaign_id'] ?? null,
+                'parent_id'   => $item['parent_id'] ?? null,
+            ],
+            orderBy: 'id:desc',
         );
 
         $wanted = $this->configSignature(is_array($item['configs'] ?? null) ? $item['configs'] : []);
@@ -460,12 +340,7 @@ final class CartService
             'unit_price'        => (float) $item['unit_price'],
             'vat_percentage'    => self::normalizeVatPercentage($item['vat_percentage']),
             'quantity'          => $newQuantity,
-            // A product line's campaign_id belongs to applyCampaigns(): keep
-            // what it last set rather than whatever the caller sent, so a
-            // touched campaign line stays that campaign's line.
-            'campaign_id'       => CampaignDiscountService::isDiscountLine($item)
-                ? (int) $item['campaign_id']
-                : ($existingLine['campaign_id'] ?? null),
+            'campaign_id'       => $item['campaign_id'] ?? null,
             'product_reference' => $item['product_reference'] ?? null,
             'parent_id'         => $item['parent_id'] ?? null,
         ];

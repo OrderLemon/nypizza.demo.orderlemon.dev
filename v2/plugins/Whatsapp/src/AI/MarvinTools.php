@@ -717,12 +717,9 @@ final class MarvinTools
             }
 
             $lines[] = [
-                'line_id'     => (int) $line['id'],
-                'name'        => (string) $line['item_description'],
-                'quantity'    => (int) $line['quantity'],
-                // The cart splits a product into a line per campaign it's in
-                // plus one for the rest, so the same name can appear twice.
-                'campaign_id' => isset($line['campaign_id']) ? (int) $line['campaign_id'] : null,
+                'line_id'  => (int) $line['id'],
+                'name'     => (string) $line['item_description'],
+                'quantity' => (int) $line['quantity'],
                 'options'  => array_map(
                     static fn(array $c): string => (string) $c['item_description'],
                     $configs,
