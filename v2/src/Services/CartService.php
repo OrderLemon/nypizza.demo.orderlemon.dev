@@ -136,9 +136,10 @@ final class CartService
         }
 
         // Like cart.ms's apply_promotions: drop every discount line and insert
-        // the ones the cart earns now. What each stood at before is kept so
-        // only real differences are reported, not the reinsert itself.
-        $before = [];
+        // the ones the cart earns now. Each discount is counted before and
+        // after (by campaign, product and amount) so only real differences
+        // are reported, not the reinsert itself.
+        $counts = [];
 
         foreach ($lines as $line) {
             if (!CampaignDiscountService::isDiscountLine($line)) {
@@ -146,25 +147,26 @@ final class CartService
             }
 
             $key = CampaignDiscountService::discountKey($line);
-            $before[$key] = ['line' => $line, 'quantity' => ($before[$key]['quantity'] ?? 0) + (int) $line['quantity']];
+            $counts[$key] ??= ['line' => $line, 'before' => 0, 'after' => 0];
+            $counts[$key]['before'] += (int) $line['quantity'];
             $this->repo->deleteById($table, (int) $line['id']);
+        }
+
+        foreach ($wanted as $want) {
+            $columns = $this->discountLineColumns($want);
+            $lineId = $this->repo->insertRow($table, [...$columns, 'order_id' => $orderId]);
+
+            $key = CampaignDiscountService::discountKey($columns);
+            $counts[$key] ??= ['line' => ['id' => $lineId, ...$columns], 'before' => 0, 'after' => 0];
+            $counts[$key]['after'] += $columns['quantity'];
         }
 
         $changes = [];
 
-        foreach ($wanted as $key => $want) {
-            $columns = $this->discountLineColumns($want);
-            $lineId = $this->repo->insertRow($table, [...$columns, 'order_id' => $orderId]);
-            $was = $before[$key]['quantity'] ?? 0;
-            unset($before[$key]);
-
-            if ($was !== $columns['quantity']) {
-                $changes[] = $this->changeRecord(['id' => $lineId, ...$columns], $was, $columns['quantity']);
+        foreach ($counts as ['line' => $line, 'before' => $before, 'after' => $after]) {
+            if ($before !== $after) {
+                $changes[] = $this->changeRecord($line, $before, $after);
             }
-        }
-
-        foreach ($before as ['line' => $line, 'quantity' => $was]) {
-            $changes[] = $this->changeRecord($line, $was, 0);
         }
 
         return $changes;

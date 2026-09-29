@@ -19,9 +19,10 @@ namespace Pmsrapi\V2\Services;
  * - A set costs the campaign's `price`; its discount is what the set's units
  *   cost on their lines minus that price. A set that isn't cheaper that way
  *   gets no discount (its units are still used up, as in cart.ms).
- * - Each set's discount is spread evenly, in whole cents, over its units, and
- *   written as discount lines per product — product_id 0, the campaign_id,
- *   discount_product_id, labelled "Discount - {campaign name}".
+ * - Every applied set gets its own discount line, quantity 1, carrying that
+ *   set's whole discount — product_id 0, the campaign_id, the
+ *   discount_product_id of the set's (priciest) product, labelled
+ *   "Discount - {campaign name}".
  */
 final class CampaignDiscountService
 {
@@ -53,8 +54,9 @@ final class CampaignDiscountService
 
     /**
      * @param list<array<string, mixed>> $lines the cart's flat order_items rows
-     * @return array<string, array{campaign_id: int, discount_product_id: int, item_description: string, unit_price: float, quantity: int, vat_percentage: int}>
-     *         the discount lines the cart should have, keyed by {@see discountKey()}; unit_price is negative
+     * @return list<array{campaign_id: int, discount_product_id: int, item_description: string, unit_price: float, quantity: int, vat_percentage: int}>
+     *         the discount lines the cart should have — one per applied set,
+     *         quantity 1, unit_price the set's (negative) discount
      */
     public function discountsFor(array $lines): array
     {
@@ -79,20 +81,18 @@ final class CampaignDiscountService
                     continue;
                 }
 
-                foreach ($this->spread($discount, $taken) as [$unit, $cents]) {
-                    $line = [
-                        'campaign_id'         => $campaignId,
-                        'discount_product_id' => $unit['product_id'],
-                        'item_description'    => self::DISCOUNT_LABEL . ' - ' . (string) ($campaign['name'] ?? $campaignId),
-                        'unit_price'          => -$cents / 100,
-                        'quantity'            => 0,
-                        'vat_percentage'      => $unit['vat'],
-                    ];
+                // A line can point at one product only; a mixed set (Cake
+                // trio) is filed under its priciest one.
+                $lead = $this->priciest($taken);
 
-                    $key = self::discountKey($line);
-                    $discounts[$key] ??= $line;
-                    $discounts[$key]['quantity']++;
-                }
+                $discounts[] = [
+                    'campaign_id'         => $campaignId,
+                    'discount_product_id' => $lead['product_id'],
+                    'item_description'    => self::DISCOUNT_LABEL . ' - ' . (string) ($campaign['name'] ?? $campaignId),
+                    'unit_price'          => -$discount,
+                    'quantity'            => 1,
+                    'vat_percentage'      => $lead['vat'],
+                ];
             }
         }
 
@@ -166,27 +166,15 @@ final class CampaignDiscountService
     }
 
     /**
-     * Splits one set's discount evenly over its units, in whole cents; the
-     * cents that don't divide go one each to the priciest units.
-     *
      * @param array<int, array{product_id: int, price: float, vat: int}> $taken
-     * @return list<array{0: array{product_id: int, price: float, vat: int}, 1: int}> each unit with its discount in cents
+     * @return array{product_id: int, price: float, vat: int}
      */
-    private function spread(float $discount, array $taken): array
+    private function priciest(array $taken): array
     {
-        $units = array_values($taken);
-        usort($units, static fn(array $a, array $b): int => $b['price'] <=> $a['price']);
-
-        $cents = (int) round($discount * 100);
-        $base = intdiv($cents, count($units));
-        $extra = $cents % count($units);
-        $out = [];
-
-        foreach ($units as $i => $unit) {
-            $out[] = [$unit, $base + ($i < $extra ? 1 : 0)];
-        }
-
-        return $out;
+        return array_reduce(
+            $taken,
+            static fn(?array $best, array $unit): array => $best === null || $unit['price'] > $best['price'] ? $unit : $best,
+        );
     }
 
     /**
