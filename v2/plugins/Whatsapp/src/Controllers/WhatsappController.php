@@ -659,6 +659,7 @@ final class WhatsappController
     private function transcribeInboundAudio(): ?string
     {
         if (trim($this->messagePayload["file_attachment"]) === "") {
+            $this->logger->error("Missing file attachment!", ["shop" => shop_id, "sender" => $this->messagePayload["phone_number"]]);
             throw new ValidationException(["file attachment" => "File attachment url is missing!"]);
         }
 

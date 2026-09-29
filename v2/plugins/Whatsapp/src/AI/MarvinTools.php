@@ -53,6 +53,7 @@ final class MarvinTools
         private readonly CartService $cartService,
         private readonly MenuService $menuService,
         private readonly ClientService $clientService,
+        private readonly CampaignNudge $campaignNudge,
         private readonly Logger $logger,
     ) {}
 
@@ -63,7 +64,7 @@ final class MarvinTools
      */
     public function definitions(): array
     {
-        return [
+        $tools = [
             [
                 'name'        => MarvinTool::TrackOrder->value,
                 'description' =>
@@ -218,7 +219,16 @@ final class MarvinTools
                     . 'given, then call this again with their answer. Nothing was added yet. '
                     . 'If it says deal_not_supported, tell them deals have to be picked on the '
                     . 'web menu and offer to add the items separately instead. '
-                    . 'Always read the returned total back to the shopper.',
+                    . 'Always read the returned total back to the shopper. '
+                    . 'If the reply has "campaign_nudges", the basket is one step away from a promotion: after '
+                    . 'confirming the add, mention it in one short sentence: say what to add ("missing") '
+                    . 'and the deal price vs old_price, and ask if they want to add it. This question '
+                    . 'replaces "Want to finish your order now?" in that reply. If they say yes, call this '
+                    . 'tool again with a product_id from that entry\'s product_ids and the "add" quantity. '
+                    . 'If there are no campaign_nudges, say nothing about deals. '
+                    . 'Never say a discount was applied to the basket — the total does not include '
+                    . 'it. Mention each campaign once per conversation; do not repeat it on later '
+                    . 'adds unless the shopper asks.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => [
@@ -345,6 +355,31 @@ final class MarvinTools
                 ],
             ],
         ];
+
+        $source = self::webSource();
+        if ($source !== null) {
+            $tools[] = [
+                'type'               => 'web_fetch_20260209',
+                'name'               => 'web_fetch',
+                'max_uses'           => 3,
+                'max_content_tokens' => 8000,
+                'allowed_domains'    => [(string) parse_url($source, PHP_URL_HOST)],
+            ];
+        }
+
+        return $tools;
+    }
+
+
+    public static function webSource(): ?string
+    {
+        if (!defined('shop_id') || !is_numeric(shop_id)) {
+            return null;
+        }
+
+        $sources = $this->config->secret("web_sources");
+        
+        return $sources[(int) shop_id] ?? null;
     }
 
     /**
@@ -472,13 +507,31 @@ final class MarvinTools
 
         $this->attach(MarvinTool::AddToOrder->value, ['draft' => $draft]);
 
-        return [
+        $result = [
             'ok'              => true,
             'added'           => $this->menuService->name($productId),
             'unknown_options' => $resolved['unknown'],
             'total'           => $order['total'],
             'draft'           => $draft,
         ];
+
+        // Upsell hint only — a failure here must never lose the add itself.
+        try {
+            // Only deals the basket is close to, never ones it already
+            // qualifies for: the nudge is there to get one more item added,
+            // not to announce a deal after the fact.
+            $nudges = array_values(array_filter(
+                $this->campaignNudge->near((array) ($order['items'] ?? []), $productId),
+                static fn(array $nudge): bool => empty($nudge['qualifies']),
+            ));
+            if ($nudges !== []) {
+                $result['campaign_nudges'] = $nudges;
+            }
+        } catch (Throwable $e) {
+            $this->logger->warning('marvin.campaign_nudge failed', ['error' => $e->getMessage()]);
+        }
+
+        return $result;
     }
 
     /**

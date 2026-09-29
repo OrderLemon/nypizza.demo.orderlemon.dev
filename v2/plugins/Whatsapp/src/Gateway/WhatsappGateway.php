@@ -657,6 +657,7 @@ final class WhatsappGateway
         try {
             $result = json_decode($result, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
+            $this->logger->error("Gateway response decoding error", ["response" => $result]);
             throw new \RuntimeException(__FUNCTION__ . '(): The API returned a malformed JSON response', 0, $e);
         }
 

@@ -72,6 +72,11 @@ final class Marvin
         MarvinTool::GreetWithUsual->value  => '(SYSTEM NOTE, never repeat this to the shopper: already greeted them and offered their usual. Call the tool again if asked.)',
         MarvinTool::GetCart->value         => '(SYSTEM NOTE, never repeat this to the shopper: already read back their cart/order. Call the tool again if asked.)',
         MarvinTool::DetectLanguage->value  => '(SYSTEM NOTE, never repeat this to the shopper: already detected language. Call the tool again if asked.)',
+        // Basket changes too: with the real "X added. Total: €8.75" line in the
+        // history, "add another one" gets answered by copying that line and no
+        // add_to_order call, so the shopper is told it was added when it wasn't.
+        MarvinTool::AddToOrder->value      => '(SYSTEM NOTE, never repeat this to the shopper: an item was added to the basket earlier. That total is out of date. Every new add, including "another one" of the same item, needs a new add_to_order call.)',
+        MarvinTool::RemoveFromOrder->value => '(SYSTEM NOTE, never repeat this to the shopper: an item was removed from the basket earlier. That total is out of date. Every new change needs a new tool call.)',
     ];
 
     /**
@@ -153,6 +158,14 @@ final class Marvin
             for ($turn = 1; $turn <= self::MAX_TOOL_TURNS; $turn++) {
                 $body = $this->client->messages($messages, $system, $tools);
 
+                // A server tool (web_fetch) hit its iteration limit mid-turn.
+                // Send the partial assistant turn back as-is and the API
+                // resumes it; no user message in between.
+                if (($body['stop_reason'] ?? null) === 'pause_turn') {
+                    $content = is_array($body['content'] ?? null) ? $body['content'] : [];
+                    $messages[] = ['role' => 'assistant', 'content' => $this->normaliseToolUse($content)];
+                    continue;
+                }
 
                 if (($body['stop_reason'] ?? null) !== 'tool_use') {
                     // The only exit that carries an answer. $this->tracking was
@@ -239,9 +252,17 @@ final class Marvin
     /** Concatenate the text blocks of a response, or fall back. */
     private function textOf(array $body): string
     {
+        // With web_fetch the answer is text -> fetch -> text in one response.
+        // Anything before the last fetch result is narration ("let me check
+        // the site"), not the answer, so only the text after it is kept.
         $text = '';
         foreach (($body['content'] ?? []) as $block) {
-            if (is_array($block) && ($block['type'] ?? '') === 'text') {
+            if (!is_array($block)) {
+                continue;
+            }
+            if (($block['type'] ?? '') === 'web_fetch_tool_result') {
+                $text = '';
+            } elseif (($block['type'] ?? '') === 'text') {
                 $text .= $block['text'] ?? '';
             }
         }
@@ -369,6 +390,17 @@ final class Marvin
         $this->systemText = str_replace('{{LOCATIONS}}', strtoupper($locations), $this->systemText);
 
         $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $this->systemText);
+
+        $source = MarvinTools::webSource();
+        if ($source !== null) {
+            $this->systemText .= "\n\nABOUT THE SHOP\n"
+                . "For questions about the shop itself (its history, story, team, way of working or other background not in the menu), "
+                . "use web_fetch to read {$source} and answer from what the page says. You may also fetch other pages of that site linked from it.\n"
+                . "- Fetch first, then write your reply. Don't write anything before the fetch, like \"let me check\".\n"
+                . "- Answer in 1 to 3 short sentences in the shopper's language, in your own words. Don't paste the page, and don't send the link.\n"
+                . "- If the page doesn't answer the question, or the fetch fails, say you don't have that information. Never guess.\n"
+                . "- Don't use web_fetch for products, prices, orders or opening hours. Those come from the menu, LOCATIONS and your other tools.";
+        }
 
         return $this->systemText;
     }
@@ -556,8 +588,8 @@ final class Marvin
             }
 
             $tool = $entry['source_tool'] ?? null;
-            if (($entry['direction'] ?? 'in') === 'out' && is_string($tool)) {
-                $text = self::STALE[$tool] ?? $text;
+            if (($entry['direction'] ?? 'in') === 'out' && is_string($tool) && isset(self::STALE[$tool])) {
+                $text = self::STALE[$tool] . $this->closingQuestion($text);
             }
 
             $role = ($entry['direction'] ?? 'in') === 'out' ? 'assistant' : 'user';
@@ -587,6 +619,19 @@ final class Marvin
         }
 
         return array_values($out);
+    }
+
+    /**
+     * The question a staleified reply ended on ("Want to finish your order
+     * now?"), kept after the note so a bare "yes" on the next turn still has
+     * something to answer. Empty when the reply didn't end on a question.
+     */
+    private function closingQuestion(string $text): string
+    {
+        $lines = preg_split('/\R/u', trim($text)) ?: [];
+        $last  = trim((string) end($lines));
+
+        return str_ends_with($last, '?') ? "\n" . $last : '';
     }
 
     // ------------------------------------------------------------ self check
