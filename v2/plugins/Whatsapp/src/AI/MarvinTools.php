@@ -56,6 +56,7 @@ final class MarvinTools
         private readonly CampaignNudge $campaignNudge,
         private readonly Logger $logger,
         private readonly ShopBackground $shopBackground,
+        private readonly CheckoutUpsell $checkoutUpsell,
     ) {}
 
     /**
@@ -286,7 +287,14 @@ final class MarvinTools
                     . 'Read the basket and the total back to them in your message so they can see '
                     . 'what they are paying for, then tell them to tap the link to finish. '
                     . 'You cannot take payment and you are not placing the order — the link is. '
-                    . 'If it says empty_basket, they have not chosen anything yet.',
+                    . 'If it says empty_basket, they have not chosen anything yet. '
+                    . 'If it says upsell_first, there is no link yet: offer the "offer" product in one '
+                    . 'short, friendly sentence with its name and price (use the "pitch" wording if '
+                    . 'given, e.g. "Something nice for the weekend?"), then ask "Shall I add 1 [name]?". '
+                    . 'Don\'t read the basket back in that message. If they say yes, call add_to_order '
+                    . 'with that product_id and quantity 1, then call checkout_order again. If they say '
+                    . 'no, call checkout_order again right away. The offer is made only once per basket, '
+                    . 'so the second call always returns the link.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => new \stdClass(),
@@ -606,6 +614,17 @@ final class MarvinTools
 
         if ($full['items'] === []) {
             return ['ok' => false, 'reason' => 'empty_basket'];
+        }
+
+        // One offer per basket, before the link
+        $offer = $this->checkoutUpsell->offerFor($phone, (int) $order['id'], (array) $full['items']);
+        if ($offer !== null) {
+            return [
+                'ok'     => false,
+                'reason' => 'upsell_first',
+                'offer'  => $offer,
+                'total'  => $full['total'],
+            ];
         }
 
         $draft = $this->summarize($full);
