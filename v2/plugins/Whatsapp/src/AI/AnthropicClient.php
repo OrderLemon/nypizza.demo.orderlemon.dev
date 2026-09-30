@@ -100,11 +100,14 @@ final class AnthropicClient
      *                                            belongs on the last one
      * @param list<array<string,mixed>> $tools    tool definitions; part of the
      *                                            cached prefix, ahead of $system
+     * @param array<string,mixed>|null $toolChoice e.g. ['type' => 'none'] to
+     *                                            force a text answer while
+     *                                            keeping $tools (and the cache)
      * @return array<string,mixed>
      *
      * @throws ApiException on a non-retryable failure
      */
-    public function messages(array $messages, array $system, array $tools = []): array
+    public function messages(array $messages, array $system, array $tools = [], ?array $toolChoice = null): array
     {
         if ($messages === []) {
             throw new ApiException('cannot call anthropic with an empty messages array');
@@ -124,6 +127,10 @@ final class AnthropicClient
         // does. See MarvinTools::definitions().
         if ($tools !== []) {
             $payload['tools'] = array_values($tools);
+
+            if ($toolChoice !== null) {
+                $payload['tool_choice'] = $toolChoice;
+            }
         }
 
         if ($this->effort !== null) {

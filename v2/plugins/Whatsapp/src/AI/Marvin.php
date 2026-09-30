@@ -75,11 +75,14 @@ final class Marvin
         // Basket changes too: with the real "X added. Total: €8.75" line in the
         // history, "add another one" gets answered by copying that line and no
         // add_to_order call, so the shopper is told it was added when it wasn't.
-        MarvinTool::AddToOrder->value      => '(SYSTEM NOTE, never repeat this to the shopper: an item was added to the basket earlier. That total is out of date. Every new add, including "another one" of the same item, needs a new add_to_order call.)',
-        MarvinTool::RemoveFromOrder->value => '(SYSTEM NOTE, never repeat this to the shopper: an item was removed from the basket earlier. That total is out of date. Every new change needs a new tool call.)',
+        // It must also say the change is DONE: "every add needs a call" alone
+        // read as "that add still has to happen", and a "yes" to the finishing
+        // question re-added the same 4 items.
+        MarvinTool::AddToOrder->value      => '(SYSTEM NOTE, never repeat this to the shopper: the item asked for above was added and is in the basket. Never add it again for that request. The total shown then is out of date. Only a new request from the shopper, including "another one" of the same item, needs a new add_to_order call.)',
+        MarvinTool::RemoveFromOrder->value => '(SYSTEM NOTE, never repeat this to the shopper: the change asked for above was made and is in the basket. Never redo it. The total shown then is out of date. Only a new request from the shopper needs a new tool call.)',
         // A fallback is not a real answer. Left in the history verbatim, a few
         // of them in a row teach Marvin to keep saying "I can't help you".
-        self::FALLBACK_SOURCE              => '(SYSTEM NOTE, never repeat this to the shopper: a technical error stopped the reply here. It was not a real answer and says nothing about what you can do. Answer the shopper\'s latest message normally, using your tools.)',
+        self::FALLBACK_SOURCE              => '(SYSTEM NOTE, never repeat this to the shopper: a technical error stopped the reply here. It was not a real answer and says nothing about what you can do. The basket may have changed before the error, so call get_cart before changing it again. Answer the shopper\'s latest message normally.)',
     ];
 
     /**
@@ -89,11 +92,12 @@ final class Marvin
     public const FALLBACK_SOURCE = 'fallback';
 
     /**
-     * Ceiling on tool round trips for one shopper message. A well-behaved turn
-     * uses one. More than a couple means the model is looping, and a shopper
-     * waiting on WhatsApp would rather have the fallback than a 40s silence.
+     * Ceiling on requests for one shopper message. A well-behaved turn uses
+     * one or two. The last request is sent with tools switched off, so it
+     * always ends in an answer: by then tools may already have changed the
+     * basket, and the fallback would leave the shopper unaware of that.
      */
-    private const MAX_TOOL_TURNS = 4;
+    private const MAX_TOOL_TURNS = 5;
 
     private ?string $systemText = null;
 
@@ -165,7 +169,12 @@ final class Marvin
 
 
             for ($turn = 1; $turn <= self::MAX_TOOL_TURNS; $turn++) {
-                $body = $this->client->messages($messages, $system, $tools);
+                $lastTurn = $turn === self::MAX_TOOL_TURNS;
+                if ($lastTurn) {
+                    $this->logger->warning('marvin: tool turns used up, forcing an answer', ['turns' => $turn - 1]);
+                }
+
+                $body = $this->client->messages($messages, $system, $tools, $lastTurn ? ['type' => 'none'] : null);
 
                 if (($body['stop_reason'] ?? null) !== 'tool_use') {
                     // The only exit that carries an answer. $this->tracking was
@@ -183,6 +192,13 @@ final class Marvin
                 $results = [];
                 foreach ($content as $block) {
                     if (is_array($block) && ($block['type'] ?? '') === 'tool_use') {
+                        // Without this a failed turn only says "loop exhausted",
+                        // not what Marvin was actually trying to do.
+                        $this->logger->info('marvin: tool call', [
+                            'turn'  => $turn,
+                            'tool'  => $block['name'] ?? null,
+                            'input' => $block['input'] ?? null,
+                        ]);
                         $results[] = $this->tools->run($block, $phone);
                     }
                 }

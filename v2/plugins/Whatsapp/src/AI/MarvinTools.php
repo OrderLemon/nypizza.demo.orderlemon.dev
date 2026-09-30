@@ -262,17 +262,25 @@ final class MarvinTools
             [
                 'name'        => MarvinTool::RemoveFromOrder->value,
                 'description' =>
-                    'Remove one line from the basket. Call this when the shopper changes their '
-                    . 'mind — "drop the fries", "not the cookie", "remove the second pizza". Pass '
-                    . 'the line_id from the basket the previous tool call returned; never guess '
-                    . 'one, and never ask the shopper for it. To change a quantity or an option, '
-                    . 'remove the line and add it again. Read the new total back to them.',
+                    'Remove a line, or some of its units, from the basket. Call this when the '
+                    . 'shopper changes their mind — "drop the fries", "not the cookie", "only 4 '
+                    . 'instead of 8". Pass the line_id from the basket the previous tool call '
+                    . 'returned; never guess one, and never ask the shopper for it. To lower a '
+                    . 'quantity, pass keep = how many should be left on the line (8 down to 4 means '
+                    . 'keep 4; "remove 2" of 8 means keep 6, using the quantity from that basket): '
+                    . 'the line keeps its options, so do not add it again. Leave keep out to '
+                    . 'remove the whole line. To raise a quantity, use add_to_order. To change an '
+                    . 'option, remove the line and add it again. Read the new total back to them.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => [
                         'line_id' => [
                             'type'        => 'integer',
                             'description' => 'line_id from the basket returned by an earlier call.',
+                        ],
+                        'keep' => [
+                            'type'        => 'integer',
+                            'description' => 'How many units should be left on the line. Omit to remove the whole line.',
                         ],
                     ],
                     'required'   => ['line_id'],
@@ -284,8 +292,8 @@ final class MarvinTools
                     'Finish the basket and get the link the shopper completes their order with. '
                     . 'Call this when they say they are done — "that\'s it", "that\'s all", '
                     . '"checkout", "order it". The link is added to your reply automatically. '
-                    . 'Read the basket and the total back to them in your message so they can see '
-                    . 'what they are paying for, then tell them to tap the link to finish. '
+                    . 'Read the total back to them, then tell them to tap the link to finish. '
+                    . 'List the basket only if they ask for it. '
                     . 'You cannot take payment and you are not placing the order — the link is. '
                     . 'If it says empty_basket, they have not chosen anything yet. '
                     . 'If it says upsell_first, there is no link yet: offer the "offer" product in one '
@@ -554,13 +562,17 @@ final class MarvinTools
 
     /**
      * Remove a whole line (and, via the cart service, every config attached to
-     * it). The line's own catalog fields are read back from the cart first —
+     * it), or with "keep" lower it to that many units: the cart service keeps
+     * its configs in step, so the options survive. An absolute count, not a
+     * number to subtract: "back to 4" needs no arithmetic, and it can never
+     * go wrong on a quantity Marvin remembers from an older basket. The line's own catalog fields are read back from the cart first —
      * Marvin only ever knows the line_id, and the cart service still wants a
-     * full item shape even though none of it is used on a delete.
+     * full item shape.
      */
     private function removeFromOrder(string $phone, array $input): array
     {
         $lineId = (int) ($input['line_id'] ?? 0);
+        $keep = isset($input['keep']) ? max(0, (int) $input['keep']) : null;
 
         $order = $this->cartService->activeOrderFor($phone);
 
@@ -574,13 +586,21 @@ final class MarvinTools
             return ['ok' => false, 'reason' => 'no_such_line'];
         }
 
+        // Removing only: a keep above the current quantity changes nothing.
+        $left = $keep === null ? 0 : min($keep, (int) $line['quantity']);
+
+        // A kept line is updated in place, and every column is rewritten from
+        // this item, so it has to carry the line's own values, not defaults.
         $updated = $this->cartService->updateCart([[
             'id'                 => $lineId,
             'product_id'         => (int) $line['product_id'],
             'category_id'        => (int) $line['category_id'],
+            'item_description'   => (string) $line['item_description'],
             'unit_price'         => (float) $line['unit_price'],
             'vat_percentage'     => (int) $line['vat_percentage'],
-            'quantity'           => 0,
+            'campaign_id'        => $line['campaign_id'] ?? null,
+            'product_reference'  => $line['product_reference'] ?? null,
+            'quantity'           => $left,
             'override_quantity'  => true,
         ]], $phone);
 
