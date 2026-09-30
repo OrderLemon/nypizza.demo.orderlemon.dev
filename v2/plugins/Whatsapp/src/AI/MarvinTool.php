@@ -13,6 +13,7 @@ enum MarvinTool: string
     case CheckoutOrder   = 'checkout_order';
     case GetCart   = 'get_cart';
     case DetectLanguage   = 'detect_language';
+    case ShopBackground = 'shop_background';
 
     // used for system notes in the chat transcript, not for actual Marvin calls
     case IdleReminder   = 'idle_reminder';
