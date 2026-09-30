@@ -20,6 +20,7 @@ use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\AnthropicClient;
 use Plugins\Whatsapp\AI\MarvinTools;
+use Plugins\Whatsapp\AI\ShopBackground;
 use Plugins\Whatsapp\AI\CampaignNudge;
 use Pmsrapi\V2\Services\TrackingService;
 use Pmsrapi\V2\Services\ClientService;
@@ -63,7 +64,13 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(ClientService::class),
             $c->get(CampaignNudge::class),
             $c->get(Logger::class),
+            $c->get(ShopBackground::class),
+        ));
+
+        $registrar->singleton(ShopBackground::class, static fn(Container $c): ShopBackground => new ShopBackground(
             $c->get(Config::class),
+            $c->get(RedisClient::class),
+            $c->get(Logger::class),
         ));
 
         $registrar->singleton(CampaignNudge::class, static fn(Container $c): CampaignNudge => new CampaignNudge(

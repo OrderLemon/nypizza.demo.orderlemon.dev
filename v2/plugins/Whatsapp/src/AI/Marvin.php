@@ -167,15 +167,6 @@ final class Marvin
             for ($turn = 1; $turn <= self::MAX_TOOL_TURNS; $turn++) {
                 $body = $this->client->messages($messages, $system, $tools);
 
-                // A server tool (web_fetch) hit its iteration limit mid-turn.
-                // Send the partial assistant turn back as-is and the API
-                // resumes it; no user message in between.
-                if (($body['stop_reason'] ?? null) === 'pause_turn') {
-                    $content = is_array($body['content'] ?? null) ? $body['content'] : [];
-                    $messages[] = ['role' => 'assistant', 'content' => $this->normaliseToolUse($content)];
-                    continue;
-                }
-
                 if (($body['stop_reason'] ?? null) !== 'tool_use') {
                     // The only exit that carries an answer. $this->tracking was
                     // set on the previous pass, if a tool produced one.
@@ -263,17 +254,9 @@ final class Marvin
     /** Concatenate the text blocks of a response, or fall back. */
     private function textOf(array $body): string
     {
-        // With web_fetch the answer is text -> fetch -> text in one response.
-        // Anything before the last fetch result is narration ("let me check
-        // the site"), not the answer, so only the text after it is kept.
         $text = '';
         foreach (($body['content'] ?? []) as $block) {
-            if (!is_array($block)) {
-                continue;
-            }
-            if (($block['type'] ?? '') === 'web_fetch_tool_result') {
-                $text = '';
-            } elseif (($block['type'] ?? '') === 'text') {
+            if (is_array($block) && ($block['type'] ?? '') === 'text') {
                 $text .= $block['text'] ?? '';
             }
         }
@@ -402,15 +385,13 @@ final class Marvin
 
         $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $this->systemText);
 
-        $source = $this->tools->webSource();
-        if ($source !== null) {
+        if ($this->tools->hasShopBackground()) {
             $this->systemText .= "\n\nABOUT THE SHOP\n"
                 . "For questions about the shop itself (its history, story, team, way of working or other background not in the menu), "
-                . "use web_fetch to read {$source} and answer from what the page says. You may also fetch other pages of that site linked from it.\n"
-                . "- Fetch first, then write your reply. Don't write anything before the fetch, like \"let me check\".\n"
-                . "- Answer in 1 to 3 short sentences in the shopper's language, in your own words. Don't paste the page, and don't send the link.\n"
-                . "- If the page doesn't answer the question, or the fetch fails, say you don't have that information. Never guess.\n"
-                . "- Don't use web_fetch for products, prices, orders or opening hours. Those come from the menu, LOCATIONS and your other tools.";
+                . "call shop_background and answer from what it returns.\n"
+                . "- Answer in 1 to 3 short sentences in the shopper's language, in your own words. Don't paste the text, and don't send a link.\n"
+                . "- If it doesn't answer the question, or the tool fails, say you don't have that information. Never guess.\n"
+                . "- Don't use shop_background for products, prices, orders or opening hours. Those come from the menu, LOCATIONS and your other tools.";
         }
 
         return $this->systemText;

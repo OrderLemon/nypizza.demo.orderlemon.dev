@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Plugins\Whatsapp\AI;
 
 use Plugins\Whatsapp\AI\MarvinTool;
-use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\TrackingService;
@@ -56,7 +55,7 @@ final class MarvinTools
         private readonly ClientService $clientService,
         private readonly CampaignNudge $campaignNudge,
         private readonly Logger $logger,
-        private readonly Config $config,
+        private readonly ShopBackground $shopBackground,
     ) {}
 
     /**
@@ -364,36 +363,32 @@ final class MarvinTools
             ],
         ];
 
-        $source = $this->webSource();
-        if ($source !== null) {
+        // Only for shops with a background page configured; others never see it.
+        if ($this->shopBackground->isConfigured()) {
             $tools[] = [
-                'type'               => 'web_fetch_20260209',
-                'name'               => 'web_fetch',
-                'max_uses'           => 3,
-                'max_content_tokens' => 8000,
-                'allowed_domains'    => [(string) parse_url($source, PHP_URL_HOST)],
+                'name'        => MarvinTool::ShopBackground->value,
+                'description' =>
+                    'Read the shop\'s own background page: its history, story, team, way of working '
+                    . 'and other information about the business itself. Call this only when the '
+                    . 'shopper asks about the shop itself, never for products, prices, orders or '
+                    . 'opening hours. Takes no arguments. Returns the page as plain text; answer '
+                    . 'from it in your own words. If it does not answer the question, say you do '
+                    . 'not have that information.',
+                'input_schema' => [
+                    'type'       => 'object',
+                    'properties' => new \stdClass(),
+                    'required'   => [],
+                ],
             ];
         }
 
         return $tools;
     }
 
-
-    public function webSource(): ?string
+    /** Whether this shop has a background page for shop_background. */
+    public function hasShopBackground(): bool
     {
-        if (!defined('shop_id') || !is_numeric(shop_id)) {
-            return null;
-        }
-
-        $sources = $this->config->secret("web_sources", []);
-
-        if (!is_array($sources)) {
-            return null;
-        }
-
-        $source = $sources[(int) shop_id] ?? null;
-
-        return is_string($source) && trim($source) !== '' ? $source : null;
+        return $this->shopBackground->isConfigured();
     }
 
     /**
@@ -427,6 +422,7 @@ final class MarvinTools
                 MarvinTool::CheckoutOrder->value   => $this->checkoutOrder($phone),
                 MarvinTool::GetCart->value         => $this->getCart($phone),
                 MarvinTool::DetectLanguage->value  => $this->detectLanguage($in, $phone),
+                MarvinTool::ShopBackground->value  => ['page' => $this->shopBackground->text()],
                 default       => throw new ApiException("unknown tool: {$name}"),
             };
 
