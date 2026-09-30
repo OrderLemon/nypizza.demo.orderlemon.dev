@@ -21,6 +21,7 @@ use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\AnthropicClient;
 use Plugins\Whatsapp\AI\MarvinTools;
 use Plugins\Whatsapp\AI\ShopBackground;
+use Plugins\Whatsapp\AI\CheckoutUpsell;
 use Plugins\Whatsapp\AI\CampaignNudge;
 use Pmsrapi\V2\Services\TrackingService;
 use Pmsrapi\V2\Services\ClientService;
@@ -65,6 +66,13 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(CampaignNudge::class),
             $c->get(Logger::class),
             $c->get(ShopBackground::class),
+            $c->get(CheckoutUpsell::class),
+        ));
+
+        $registrar->singleton(CheckoutUpsell::class, static fn(Container $c): CheckoutUpsell => new CheckoutUpsell(
+            $c->get(RedisClient::class),
+            $c->get(MenuService::class),
+            $c->get(Logger::class),
         ));
 
         $registrar->singleton(ShopBackground::class, static fn(Container $c): ShopBackground => new ShopBackground(
