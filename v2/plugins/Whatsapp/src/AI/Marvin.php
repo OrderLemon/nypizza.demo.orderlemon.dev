@@ -80,6 +80,7 @@ final class Marvin
         // question re-added the same 4 items.
         MarvinTool::AddToOrder->value      => '(SYSTEM NOTE, never repeat this to the shopper: the item asked for above was added and is in the basket. Never add it again for that request. The total shown then is out of date. Only a new request from the shopper, including "another one" of the same item, needs a new add_to_order call.)',
         MarvinTool::RemoveFromOrder->value => '(SYSTEM NOTE, never repeat this to the shopper: the change asked for above was made and is in the basket. Never redo it. The total shown then is out of date. Only a new request from the shopper needs a new tool call.)',
+        MarvinTool::ChangeLogistics->value => '(SYSTEM NOTE, never repeat this to the shopper: the pickup/delivery choice and time asked for above were saved on the basket. Never redo it. Only a new request from the shopper to change them again needs a new change_logistics call.)',
         // A fallback is not a real answer. Left in the history verbatim, a few
         // of them in a row teach Marvin to keep saying "I can't help you".
         self::FALLBACK_SOURCE              => '(SYSTEM NOTE, never repeat this to the shopper: a technical error stopped the reply here. It was not a real answer and says nothing about what you can do. The basket may have changed before the error, so call get_cart before changing it again. Answer the shopper\'s latest message normally.)',

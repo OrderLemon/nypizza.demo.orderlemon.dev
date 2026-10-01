@@ -41,6 +41,8 @@ final class MarvinTools
     /** A shopper typo'd quantity ("2000 fries") should not become a real line. */
     private const int MAX_QUANTITY = 20;
 
+    private const string MOMENT_FORMAT = 'Y-m-d H:i';
+
     private ?array $attachment = null;
 
     /** Set by detectLanguage(); read back via detectedLanguage(). ISO 639-1. */
@@ -292,7 +294,8 @@ final class MarvinTools
                     'Finish the basket and get the link the shopper completes their order with. '
                     . 'Call this when they say they are done — "that\'s it", "that\'s all", '
                     . '"checkout", "order it". The link is added to your reply automatically. '
-                    . 'Read the total back to them, then tell them to tap the link to finish. '
+                    . 'Read the total back to them, then say in one short line whether it is pickup or '
+                    . 'delivery and when (from draft.logistics), then tell them to tap the link to finish. '
                     . 'List the basket only if they ask for it. '
                     . 'You cannot take payment and you are not placing the order — the link is. '
                     . 'If it says empty_basket, they have not chosen anything yet. '
@@ -301,8 +304,10 @@ final class MarvinTools
                     . 'given, e.g. "Something nice for the weekend?"), then ask "Shall I add 1 [name]?". '
                     . 'Don\'t read the basket back in that message. If they say yes, call add_to_order '
                     . 'with that product_id and quantity 1, then call checkout_order again. If they say '
-                    . 'no, call checkout_order again right away. The offer is made only once per basket, '
-                    . 'so the second call always returns the link.',
+                    . 'no, call checkout_order again right away. The offer is made only once per basket. '
+                    . 'If it says logistics_first, there is no link yet because no future pickup or delivery '
+                    . 'time is set: ask in one short question whether they want pickup or delivery, and for '
+                    . 'when. Once they answer, call change_logistics, then call checkout_order again.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => new \stdClass(),
@@ -315,7 +320,9 @@ final class MarvinTools
                     'Retrieve the current shopping cart and its total. '
                     . 'Call this when they ask to see what they have in their cart or want to review their order. '
                     . 'Read the cart and the total back to them in your message so they can see '
-                    . 'what they are paying for, then tell them to tap the link to finish. '
+                    . 'what they are paying for, then say in one short line whether it is pickup or delivery '
+                    . 'and when (from cart.logistics; if moment is null, say no time is set yet), '
+                    . 'then tell them to tap the link to finish. '
                     . 'Do not attempt to show users other products other than what is in their cart. '
                     . 'You cannot take payment and you are not placing the order — the link is. '   
                     . 'If it says empty_basket, they have not chosen anything yet.',
@@ -323,6 +330,38 @@ final class MarvinTools
                     'type'       => 'object',
                     'properties' => new \stdClass(),
                     'required'   => [],
+                ],
+            ],
+            [
+                'name'        => MarvinTool::ChangeLogistics->value,
+                'description' =>
+                    'Set whether the shopper picks their order up or has it delivered, and when. '
+                    . 'Call this when the shopper asks for or confirms pickup or delivery and a time. '
+                    . 'A new basket is pickup by default. '
+                    . 'You need both the type and a time before calling. If the shopper has not given a time, ask for one first. '
+                    . 'The time must be in the future and inside the store\'s opening hours (openingHours in LOCATIONS). '
+                    . 'You do not know the current time. Every result includes "now", so use it to check. '
+                    . 'If the shopper says "as soon as possible" or "now", send date "asap". If "now" in the result is '
+                    . 'outside opening hours, call again with the next opening time and tell the shopper. '
+                    . 'If it says date_in_past or invalid_date, ask the shopper for a new time. Do not guess one. '
+                    . 'If it says empty_basket, they have not chosen anything yet.',
+                'input_schema' => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'logistics_type' => [
+                            'type'        => 'integer',
+                            'enum'        => [CartService::PICKUP_LOGISTIC_TYPE, CartService::DELIVERY_LOGISTIC_TYPE],
+                            'description' => '1 for pickup, 2 for delivery.',
+                        ],
+                        'date' => [
+                            'type'        => 'string',
+                            'description' =>
+                                'When to pick up or deliver, in the shop\'s local time, 24-hour clock: '
+                                . '"HH:MM" for today (e.g. "20:00"), "YYYY-MM-DD HH:MM" for another day '
+                                . '(work it out from "now" in an earlier result), or "asap" for as soon as possible.',
+                        ],
+                    ],
+                    'required'   => ['logistics_type', 'date'],
                 ],
             ],
             [
@@ -438,6 +477,7 @@ final class MarvinTools
                 MarvinTool::CheckoutOrder->value   => $this->checkoutOrder($phone),
                 MarvinTool::GetCart->value         => $this->getCart($phone),
                 MarvinTool::DetectLanguage->value  => $this->detectLanguage($in, $phone),
+                MarvinTool::ChangeLogistics->value => $this->changeLogistics($in, $phone),
                 MarvinTool::ShopBackground->value  => ['page' => $this->shopBackground->text()],
                 default       => throw new ApiException("unknown tool: {$name}"),
             };
@@ -649,6 +689,20 @@ final class MarvinTools
 
         $draft = $this->summarize($full);
 
+        // No link until there's a pickup/delivery time still ahead of us: a
+        // new cart has none, and one set on an earlier visit may have passed.
+        $now = new \DateTimeImmutable();
+        $moment = $this->storedMoment($full);
+        if ($moment === null || $moment < $now) {
+            return [
+                'ok'        => false,
+                'reason'    => 'logistics_first',
+                'logistics' => $draft['logistics'],
+                'now'       => $now->format('l ' . self::MOMENT_FORMAT),
+                'total'     => $full['total'],
+            ];
+        }
+
         $this->attach(MarvinTool::CheckoutOrder->value, ['draft' => $draft]);
 
         return [
@@ -704,6 +758,76 @@ final class MarvinTools
         $this->attach(MarvinTool::DetectLanguage->value, ['language' => $language]);
 
         return ['ok' => true, 'language' => $language];
+    }
+ 
+
+    private function changeLogistics(array $input, string $phone): array
+    {
+        $now = new \DateTimeImmutable();
+        $clock = ['now' => $now->format('l ' . self::MOMENT_FORMAT)];
+
+        $type = filter_var($input['logistics_type'] ?? null, FILTER_VALIDATE_INT);
+        if ($type === false || !isset(CartService::LOGISTIC_LABELS[$type])) {
+            return ['ok' => false, 'reason' => 'invalid_logistics_type', ...$clock];
+        }
+
+        $raw = trim((string) ($input['date'] ?? ''));
+        // The model can't know today's date, so a bare "HH:MM" means today.
+        $moment = match (true) {
+            strtolower($raw) === 'asap' => $now,
+            preg_match('/^\d{2}:\d{2}$/', $raw) === 1 => $this->parseMoment($now->format('Y-m-d ') . $raw),
+            default => $this->parseMoment($raw),
+        };
+        if ($moment === null) {
+            return ['ok' => false, 'reason' => 'invalid_date', ...$clock];
+        }
+
+        if ($moment->format(self::MOMENT_FORMAT) < $now->format(self::MOMENT_FORMAT)) {
+            return ['ok' => false, 'reason' => 'date_in_past', ...$clock];
+        }
+
+        if ($this->cartService->activeOrderFor($phone) === null) {
+            return ['ok' => false, 'reason' => 'empty_basket', ...$clock];
+        }
+
+        $this->cartService->updateCartLogistics($type, $moment, $phone);
+
+        $logistics = [
+            'type'   => CartService::LOGISTIC_LABELS[$type],
+            'moment' => $moment->format('l ' . self::MOMENT_FORMAT),
+        ];
+
+        $this->attach(MarvinTool::ChangeLogistics->value, ['logistics' => $logistics]);
+
+        return ['ok' => true, ...$logistics, ...$clock];
+    }
+
+    /** "YYYY-MM-DD HH:MM" (seconds tolerated), or null if it isn't a real date. */
+    private function parseMoment(string $raw): ?\DateTimeImmutable
+    {
+        foreach ([self::MOMENT_FORMAT, 'Y-m-d H:i:s'] as $format) {
+            $moment = \DateTimeImmutable::createFromFormat('!' . $format, $raw);
+            // createFromFormat rolls "2026-02-31" over into March; the round trip catches that.
+            if ($moment !== false && $moment->format($format) === $raw) {
+                return $moment;
+            }
+        }
+
+        return null;
+    }
+
+    private function isDelivery(array $order): bool
+    {
+        return (int) ($order['logistics_type'] ?? CartService::PICKUP_LOGISTIC_TYPE)
+            === CartService::DELIVERY_LOGISTIC_TYPE;
+    }
+
+    /** The cart's pickup or delivery moment, whichever its type uses; null if unset. */
+    private function storedMoment(array $order): ?\DateTimeImmutable
+    {
+        $stored = $order[$this->isDelivery($order) ? 'delivery_moment' : 'pick_up_moment'] ?? null;
+
+        return is_string($stored) ? $this->parseMoment($stored) : null;
     }
 
     /** A line in the cart's items, or null if this phone has no such line. */
@@ -764,9 +888,15 @@ final class MarvinTools
         }
 
         return [
-            'items' => $lines,
-            'count' => count($lines),
-            'total' => (float) ($order['total'] ?? 0),
+            'items'     => $lines,
+            'count'     => count($lines),
+            'logistics' => [
+                'type'   => CartService::LOGISTIC_LABELS[$this->isDelivery($order)
+                    ? CartService::DELIVERY_LOGISTIC_TYPE
+                    : CartService::PICKUP_LOGISTIC_TYPE],
+                'moment' => $this->storedMoment($order)?->format('l ' . self::MOMENT_FORMAT),
+            ],
+            'total'     => (float) ($order['total'] ?? 0),
         ];
     }
 

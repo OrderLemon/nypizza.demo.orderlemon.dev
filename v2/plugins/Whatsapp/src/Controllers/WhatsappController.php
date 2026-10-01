@@ -189,6 +189,7 @@ final class WhatsappController
             MarvinTool::CheckoutOrder->value => $this->draftStatus($reply, checkout: true),
             MarvinTool::AddToOrder->value => $this->draftStatus($reply),
             MarvinTool::RemoveFromOrder->value => $this->draftStatus($reply),
+            MarvinTool::ChangeLogistics->value => $this->draftStatus($reply),
             MarvinTool::GetCart->value => $this->sendCartStatus($reply),
             MarvinTool::DetectLanguage->value => $this->setLanguageAndReply($reply),
             default => ['sent' => false, 'error' => "Marvin returned an unknown reply type: " . ($reply["type"] ?? '')],

@@ -26,6 +26,7 @@ final class CartService
     private const int CHECKED_OUT_STATUS_ID = 2;
 
 
+    public const int PICKUP_LOGISTIC_TYPE = 1;
     public const int DELIVERY_LOGISTIC_TYPE = 2;
 
 
@@ -35,7 +36,10 @@ final class CartService
 
     private const array ADDRESS_FIELDS = ['country', 'state', 'city', 'zip', 'street', 'box'];
 
-    private const array LOGISTIC_LABELS = [1 => "pick_up", 2 => "delivery"];
+    public const array LOGISTIC_LABELS = [
+        self::PICKUP_LOGISTIC_TYPE   => "pick_up",
+        self::DELIVERY_LOGISTIC_TYPE => "delivery",
+    ];
 
     public function __construct(
         private readonly Repository $repo,
@@ -751,6 +755,29 @@ final class CartService
         ]);
 
         return $this->withItemsAndTotal($orderId, [], false);
+    }
+
+    public function updateCartLogistics(int $logisticsType, \DateTimeImmutable $moment, string $phone): void
+    {
+        if (!isset(self::LOGISTIC_LABELS[$logisticsType])) {
+            throw new ValidationException(['logistics_type' => "Unknown logistics type {$logisticsType}"]);
+        }
+
+        $order = $this->activeOrderFor($phone);
+
+        if ($order === null) {
+            throw new NotFoundException('No active cart to update for this phone number');
+        }
+
+        $formatted  = $moment->format('Y-m-d H:i:s');
+        $isDelivery = $logisticsType === self::DELIVERY_LOGISTIC_TYPE;
+
+        $this->repo->updateById($this->ordersTable(), (int) $order['id'], [
+            'logistics_type'  => $logisticsType,
+            'logistics_label' => self::LOGISTIC_LABELS[$logisticsType],
+            'pick_up_moment'  => $isDelivery ? null : $formatted,
+            'delivery_moment' => $isDelivery ? $formatted : null,
+        ]);
     }
 
     // --------------------------------------------------------------- helpers
