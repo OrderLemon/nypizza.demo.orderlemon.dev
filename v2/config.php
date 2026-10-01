@@ -27,7 +27,7 @@ return [
     // --- Where the secret config JSON lives (shared with v1) ---
     // Default: parent directory of the project root, named after the service.
     // Absolute paths are recommended in production.
-    'secrets_path' => dirname(__DIR__, 2) . '/nypizza.demo.json',
+    'secrets_path' => dirname(__DIR__, 2) . '/configs/nypizza.demo.json',
 
     // --- Runtime-managed webhook registry (built/rebuilt via REST) ---
     // A SEPARATE file from the secret config: it is writable at runtime, so it
