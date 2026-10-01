@@ -10,7 +10,6 @@ use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Exception\ServiceException;
 use Pmsrapi\V2\Support\Logger;
-use Plugins\Shop\Services\ShopService;
 
 /**
  * Replaces a cart's entire contents with the given items in one call:
@@ -54,7 +53,7 @@ final class CartSyncService
                     return ['phonenumber' => $phoneNumber, 'items' => [], 'total' => 0.0];
                 }
 
-                $order = $this->cart->newOrder($phoneNumber);
+                $order = $this->cart->openCart($phoneNumber, $logistics);
             }
 
             $order["logistics_type"] = $logistics;

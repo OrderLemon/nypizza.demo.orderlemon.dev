@@ -8,7 +8,7 @@ use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\NotFoundException;
-use Pmsrapi\V2\Exception\ServiceException;
+use Pmsrapi\V2\Exception\OrderingUnavailableException;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Support\Logger;
 
@@ -48,9 +48,33 @@ final class CartService
         private readonly ClientService $clients,
         private readonly ConversationService $conversations,
         private readonly CampaignDiscountService $campaignDiscounts,
+        private readonly ShopService $shops,
     ) {}
 
-    public function newOrder(string $phoneNumber): array
+    /**
+     * The phone's ongoing cart, or a new one. An ongoing cart is always
+     * returned — it stays editable whatever the time. A new one only opens
+     * while the shop has a window left to order for: today before its last
+     * order time, or a later day as a pre-order. $logistics narrows that to
+     * pickup or delivery; null means either.
+     */
+    public function openCart(string $phoneNumber, ?int $logistics = null): array
+    {
+        return $this->activeOrderFor($phoneNumber) ?? $this->newOrderIfOrderable($phoneNumber, $logistics);
+    }
+
+    private function newOrderIfOrderable(string $phoneNumber, ?int $logistics): array
+    {
+        $now = new \DateTimeImmutable();
+
+        if (!$this->shops->canOpenCart($logistics, $now)) {
+            throw new OrderingUnavailableException('no_orderable_slot', $this->shops->availability($now));
+        }
+
+        return $this->newOrder($phoneNumber);
+    }
+
+    private function newOrder(string $phoneNumber): array
     {
         $table = $this->ordersTable();
 
@@ -85,36 +109,48 @@ final class CartService
 
         $order['items'] = [];
 
-
         return $order;
     }
 
-    /** Applies each item's quantity change and returns the refreshed cart. */
-    public function updateCart(array $items, string $phoneNumber, int $logistics = 1): array
+    /**
+     * The cart $items apply to: the ongoing one, else a new one if the shop
+     * is taking orders (see openCart()). A call that only removes things never
+     * opens an empty cart.
+     */
+    private function resolveCartFor(string $phoneNumber, array $items, ?int $logistics): int
     {
         $order = $this->activeOrderFor($phoneNumber);
-        $orderId = $order !== null ? (int) $order['id'] : null;
+
+        if ($order !== null) {
+            return (int) $order['id'];
+        }
+
+        $addsSomething = array_filter($items, static fn(array $i): bool => (int) ($i['quantity'] ?? 0) > 0);
+
+        if ($addsSomething === []) {
+            throw new NotFoundException('No active cart for this phone number');
+        }
+
+        return (int) $this->newOrderIfOrderable($phoneNumber, $logistics)['id'];
+    }
+
+    /**
+     * Applies each item's quantity change and returns the refreshed cart.
+     * $logistics is only written when given, so an add never resets a
+     * delivery cart back to pickup.
+     */
+    public function updateCart(array $items, string $phoneNumber, ?int $logistics = null): array
+    {
+        $orderId = $this->resolveCartFor($phoneNumber, $items, $logistics);
 
         $changes = [];
 
         foreach ($items as $item) {
-            $changes = [...$changes, ...$this->applyItem($orderId, $item, $phoneNumber)];
+            $changes = [...$changes, ...$this->applyItem($orderId, $item)];
         }
 
-        if ($orderId === null) {
-            throw new NotFoundException('No active cart for this phone number');
-        }
-
-        $order["logistics_type"] = $logistics;
-
-        //TO-DO: send the order as apram to withItemsAndTotal
-        $orderUpdated = $this->repo->updateById($this->ordersTable(),
-            $orderId,
-            $order,
-        );
-
-        if($orderUpdated < 0 ){
-            throw new ServiceException('Could not update order logistiscs!');
+        if ($logistics !== null) {
+            $this->repo->updateById($this->ordersTable(), $orderId, ['logistics_type' => $logistics]);
         }
 
         $changes = [...$changes, ...$this->applyCampaigns($orderId)];
@@ -226,12 +262,8 @@ final class CartService
      *
      * @return array{line: ?array<string, mixed>, completingConfigs: bool}
      */
-    private function findMatchingLine(?int $orderId, array $item): array
+    private function findMatchingLine(int $orderId, array $item): array
     {
-        if ($orderId === null) {
-            return ['line' => null, 'completingConfigs' => false];
-        }
-
         if (isset($item['id']) && $item["id"] !== null) {
             $line = $this->repo->selectRow($this->orderItemsTable(), [
                 'order_id' => $orderId,
@@ -305,7 +337,7 @@ final class CartService
      * Applies one item's quantity to its matching line (insert/update/delete),
      * then its configs. Returns a change record for each line that changed.
      */
-    private function applyItem(?int &$orderId, array $item, string $phoneNumber): array
+    private function applyItem(int $orderId, array $item): array
     {
         $item = $this->normalizeIds($item);
         $this->validateItem($item);
@@ -361,10 +393,6 @@ final class CartService
                 $syncedChanges = $this->syncConfigQuantities($lineId, $newQuantity);
             }
         } else {
-            if ($orderId === null) {
-                $orderId = (int) $this->newOrder($phoneNumber)['id'];
-            }
-
             $lineId = $this->repo->insertRow($this->orderItemsTable(), [...$columns, 'order_id' => $orderId]);
         }
 
@@ -377,7 +405,7 @@ final class CartService
         return [
             ...$changes,
             ...$syncedChanges,
-            ...$this->applyConfigs($orderId, $item['configs'] ?? [], $lineId, $phoneNumber),
+            ...$this->applyConfigs($orderId, $item['configs'] ?? [], $lineId),
         ];
     }
 
@@ -415,7 +443,7 @@ final class CartService
      *        cart item; each one's parent_id is forced to $hostLineId
      * @return list<array<string, mixed>> change records, see {@see applyItem()}
      */
-    private function applyConfigs(?int &$orderId, mixed $configs, int $hostLineId, string $phoneNumber): array
+    private function applyConfigs(int $orderId, mixed $configs, int $hostLineId): array
     {
         if (!is_array($configs)) {
             throw new ValidationException(['configs' => '"configs" must be a list of items']);
@@ -428,7 +456,7 @@ final class CartService
                 throw new ValidationException(['configs' => 'Each topping must be an item object']);
             }
 
-            $changes = [...$changes, ...$this->applyItem($orderId, [...$topping, 'parent_id' => $hostLineId], $phoneNumber)];
+            $changes = [...$changes, ...$this->applyItem($orderId, [...$topping, 'parent_id' => $hostLineId])];
         }
 
         return $changes;
@@ -729,7 +757,24 @@ final class CartService
             throw new NotFoundException('No active cart to checkout for this phone number');
         }
 
-        if ((int) ($checkoutData['logistics_type'] ?? null) !== self::DELIVERY_LOGISTIC_TYPE) {
+        $logistics = (int) ($checkoutData['logistics_type'] ?? $order['logistics_type'] ?? self::PICKUP_LOGISTIC_TYPE);
+
+        if (!isset(self::LOGISTIC_LABELS[$logistics])) {
+            throw new ValidationException(['logistics_type' => "Unknown logistics type {$logistics}"]);
+        }
+
+        // Re-checked here, not only when the moment was chosen: time has
+        // passed since, and the chosen moment may be gone or past its last
+        // order time by now.
+        $moment = $logistics === self::DELIVERY_LOGISTIC_TYPE
+            ? ($checkoutData['delivery_moment'] ?? $order['delivery_moment'] ?? null)
+            : ($checkoutData['pick_up_moment'] ?? $checkoutData['pickup_moment'] ?? $order['pick_up_moment'] ?? null);
+
+        $this->assertOrderable($logistics, $moment);
+
+        $checkoutData['logistics_type'] = $logistics;
+
+        if ($logistics !== self::DELIVERY_LOGISTIC_TYPE) {
             $checkoutData = array_diff_key($checkoutData, array_flip(self::ADDRESS_FIELDS));
         }
 
@@ -748,13 +793,38 @@ final class CartService
         // smuggle its own status_id/status_label past the ones set here.
         $this->repo->updateById($this->ordersTable(), $orderId, [
             ...$orderFields,
-            'pick_up_time' => $orderFields["pick_up_moment"] ?? $orderFields["pickup_moment"], // pickup key naming 
+            'pick_up_time' => $orderFields["pick_up_moment"] ?? $orderFields["pickup_moment"] ?? null, // pickup key naming
             'status_id'    => self::CHECKED_OUT_STATUS_ID,
             'status_label' => "ordered",
-            'logistics_label' => self::LOGISTIC_LABELS[$orderFields["logistics_type"]]
+            'logistics_label' => self::LOGISTIC_LABELS[$logistics]
         ]);
 
         return $this->withItemsAndTotal($orderId, [], false);
+    }
+
+    /**
+     * Throws unless $moment ("Y-m-d H:i[:s]") is still orderable for this
+     * logistics type — see ShopService::momentProblem().
+     */
+    private function assertOrderable(int $logistics, ?string $moment): void
+    {
+        $now = new \DateTimeImmutable();
+
+        if ($moment === null || trim($moment) === '') {
+            throw new OrderingUnavailableException('moment_required', $this->shops->availability($now));
+        }
+
+        try {
+            $parsed = new \DateTimeImmutable($moment);
+        } catch (\Exception) {
+            throw new OrderingUnavailableException('invalid_moment', $this->shops->availability($now));
+        }
+
+        $problem = $this->shops->momentProblem($logistics, $parsed, $now);
+
+        if ($problem !== null) {
+            throw new OrderingUnavailableException($problem, $this->shops->availability($now));
+        }
     }
 
     public function updateCartLogistics(int $logisticsType, \DateTimeImmutable $moment, string $phone): void
@@ -767,6 +837,13 @@ final class CartService
 
         if ($order === null) {
             throw new NotFoundException('No active cart to update for this phone number');
+        }
+
+        $now = new \DateTimeImmutable();
+        $problem = $this->shops->momentProblem($logisticsType, $moment, $now);
+
+        if ($problem !== null) {
+            throw new OrderingUnavailableException($problem, $this->shops->availability($now));
         }
 
         $formatted  = $moment->format('Y-m-d H:i:s');

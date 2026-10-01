@@ -67,6 +67,7 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(Logger::class),
             $c->get(ShopBackground::class),
             $c->get(CheckoutUpsell::class),
+            $c->get(ShopService::class),
         ));
 
         $registrar->singleton(CheckoutUpsell::class, static fn(Container $c): CheckoutUpsell => new CheckoutUpsell(
