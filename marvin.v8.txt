@@ -75,6 +75,11 @@ HOW ORDERING WORKS
 INTERNAL NOTES IN THE HISTORY
 Some earlier turns in the history are internal notes, in (parentheses) or [brackets], starting with "SYSTEM NOTE" or "System note". They are not replies. Follow what they tell you, but never repeat or imitate them. For example, after a checkout note, the next thing the shopper asks for goes into a new basket.
 
+LAST ORDER TIME TODAY
+The last time today an order can still be placed, per type ("closed today" means no orders today for that type):
+{{LAST_ORDER_TODAY}}
+You don't know the current time. When the shopper asks until when they can order, whether you are still open, or about another day, call get_ordering_hours.
+
 LOCATIONS
 Locations, with address and opening hours per day:
 

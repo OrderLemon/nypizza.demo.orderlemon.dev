@@ -15,6 +15,7 @@ enum MarvinTool: string
     case DetectLanguage   = 'detect_language';
     case ChangeLogistics = 'change_logistics';
     case ShopBackground = 'shop_background';
+    case GetOrderingHours = 'get_ordering_hours';
 
     // used for system notes in the chat transcript, not for actual Marvin calls
     case IdleReminder   = 'idle_reminder';

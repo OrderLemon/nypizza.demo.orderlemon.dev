@@ -167,7 +167,16 @@ final class CartController
 
         $fullOrder = $this->cartService->withItemsAndTotal($order["id"], [], false, true);
 
-        return Response::ok(["items" => $fullOrder["items"], "totals" => $fullOrder["totals"]]);
+        return Response::ok([
+            "items" => $fullOrder["items"],
+            "totals" => $fullOrder["totals"],
+            "logistics" => [
+                "type" => $fullOrder["logistics_type"],
+                "label" => $fullOrder["logistics_label"],
+                "pick_up_moment" => $fullOrder["pick_up_moment"],
+                "delivery_moment" => $fullOrder["delivery_moment"]
+                ]
+            ]);
 
     }
 

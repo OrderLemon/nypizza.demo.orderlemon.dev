@@ -14,7 +14,6 @@ declare(strict_types=1);
  * resolving them where needed.
  */
 
-use Plugins\Shop\Services\ShopService as ServicesShopService;
 use Pmsrapi\V2\Cache\QueryCache;
 use Pmsrapi\V2\Cache\RateLimiter;
 use Pmsrapi\V2\Cache\RedisClient;
@@ -259,6 +258,7 @@ $container->singleton(CartService::class, static fn(Container $c): CartService =
     $c->get(ClientService::class),
     $c->get(ConversationService::class),
     $c->get(CampaignDiscountService::class),
+    $c->get(ShopService::class),
 ));
 
 $container->singleton(CampaignDiscountService::class, static fn(Container $c): CampaignDiscountService => new CampaignDiscountService(
@@ -268,7 +268,7 @@ $container->singleton(CampaignDiscountService::class, static fn(Container $c): C
 $container->singleton(CartSyncService::class, static fn(Container $c): CartSyncService => new CartSyncService(
     $c->get(Repository::class),
     $c->get(CartService::class),
-    $c->get(ServicesShopService::class),
+    $c->get(ShopService::class),
     $c->get(Logger::class),
     $c->get(RedisLock::class),
 ));

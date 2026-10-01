@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Plugins\Whatsapp\Controllers;
 
 use Exception;
-use Pmsrapi\v2\Services\ShopService;
+use Pmsrapi\V2\Services\ShopService;
 use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\MarvinTool;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
@@ -55,8 +55,6 @@ final class WhatsappController
 
     private array $messagePayload = [];
 
-    /** @var array<string, mixed>|null the shop resolved by findShop() for this request */
-    private ?array $shop = null;
 
     public function __construct(
         private readonly WhatsappGateway $gateway,
@@ -161,7 +159,6 @@ final class WhatsappController
 
         $reply = $this->marvin->reply(
             $this->transcripts->load($this->messagePayload["phone_number"]),
-            $this->shopInfo(),
             $this->messagePayload["full_name"],
             language: $this->conversationLanguage,
         );
@@ -556,13 +553,12 @@ final class WhatsappController
 
     private function findShop(): bool
     {
-        $shop = $this->shopService->getByPhone($this->messagePayload["shop_phone_number"]);
+        $this->shopService->getByPhone($this->messagePayload["shop_phone_number"]);
 
-        if ($shop === null || !isset($shop['id'])) {
+        if ($this->shopService->current() === null || !isset($this->shopService->current()['id'])) {
             return false;
         }
 
-        $this->shop = $shop;
 
         if (!defined('shop_id')) {
             define('shop_id', (int) $shop['id']);
@@ -755,23 +751,7 @@ final class WhatsappController
             return ['sent' => false, 'error' => $ex->getMessage()];
         }
     }
-
     
-    private function shopInfo() : array
-    {
-        if( $this->shop === [] || $this->shop === null){
-            return [];
-        }
-        return [
-            "name" => $this->shop["name"],
-            "country" => $this->shop["country"],
-            "city" => $this->shop["city"],
-            "zip" => $this->shop["zip"],
-            "street" => $this->shop["street"],
-        ];
-    }
-
-
     /**
      * Pull the gateway conversation id out of the inbound envelope, if present.
      *
@@ -800,11 +780,11 @@ final class WhatsappController
 
         $this->findShop();
 
-        if($this->shop === null || $this->shop === []){
+        if($this->shopService->current() === null || $this->shopService->current() === []){
             Response::error(404,["shop" => "No shop found!"]);
         }
 
-        $checkResults = $this->marvin->selfCheck($this->shop);
+        $checkResults = $this->marvin->selfCheck($this->shopService->current());
 
         return Response::ok(["data" => $checkResults]);
     }

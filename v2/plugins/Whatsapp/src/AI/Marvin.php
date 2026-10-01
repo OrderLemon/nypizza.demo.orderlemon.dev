@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Plugins\Whatsapp\AI;
 
+use Pmsrapi\V2\Services\ShopService;
 use Plugins\Whatsapp\AI\AnthropicClient;
 use Plugins\Whatsapp\AI\MarvinTools;
 use Plugins\Whatsapp\AI\MarvinTool;
@@ -109,6 +110,7 @@ final class Marvin
         private readonly AnthropicClient $client,
         private readonly MarvinTools $tools,
         private readonly MenuService $menuService,
+        private readonly ShopService $shopService,
         private readonly JsonService $jsonService,
         private readonly Config $config,
         private readonly Logger $logger,
@@ -138,9 +140,9 @@ final class Marvin
      *                    must stay byte-identical across shoppers for the
      *                    prompt cache to warm) or the messages array.
      */
-    public function reply(array $conversation, array $shopInfo, ?string $clientName = "", ?string $phone = null, ?string $language = null): array
+    public function reply(array $conversation, ?string $clientName = "", ?string $phone = null, ?string $language = null): array
     {
-        $this->updateShopInfo($shopInfo);
+        $this->updateShopInfo();
 
         $this->clientName = $clientName ?? "";
         $this->replyLanguage = ($language !== null && $language !== '') ? $language : 'en';
@@ -377,6 +379,9 @@ final class Marvin
         if(!isset($this->shopInfo["street"]) || trim($this->shopInfo["street"]) === ""){
             throw new ApiException("Shop address required to build prompt!");
         }
+        
+        [$pickupHours, $deliveyHours] = $this->shopService->getLogisticHours();
+
 
         $supps = $this->config->secret("support");
 
@@ -393,6 +398,16 @@ final class Marvin
         $this->systemText = str_replace('{{SUPPORT_1}}', ucwords($support1), $template);
         $this->systemText = str_replace('{{SUPPORT_2}}', ucwords($support2), $this->systemText);
 
+        $this->systemText = str_replace('{{PICKUP_HOURS}}', json_encode($pickupHours, JSON_THROW_ON_ERROR), $this->systemText);
+        $this->systemText = str_replace('{{DELIVERY_HOURS}}', json_encode($deliveyHours, JSON_THROW_ON_ERROR), $this->systemText);
+
+        // Changes once a day, so the cached prompt is rewritten at most daily.
+        $lastOrderTimes = array_map(
+            static fn(?string $time): string => $time ?? 'closed today',
+            $this->shopService->lastOrderTimes(new \DateTimeImmutable()),
+        );
+        $this->systemText = str_replace('{{LAST_ORDER_TODAY}}', json_encode($lastOrderTimes, JSON_THROW_ON_ERROR), $this->systemText);
+        
         $this->systemText = str_replace('{{CLIENT_NAME}}', ucwords($this->clientName), $this->systemText);
 
         // company name will be the shop name in the demo version
@@ -401,6 +416,7 @@ final class Marvin
         $this->systemText = str_replace('{{LOCATIONS}}', strtoupper($locations), $this->systemText);
 
         $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $this->systemText);
+
 
         if ($this->tools->hasShopBackground()) {
             $this->systemText .= "\n\nABOUT THE SHOP\n"
@@ -413,6 +429,7 @@ final class Marvin
 
         return $this->systemText;
     }
+    
 
     /** Derived from the prompt filename, so versions stay traceable in logs. */
     public function promptVersion(): string
@@ -723,8 +740,10 @@ final class Marvin
         return $content;
     }
 
-    private function updateShopInfo(array $shopInfo): void
+    private function updateShopInfo(): void
     {
+        $shopInfo = $this->shopService->shopBrief();
+        
         if(!isset($shopInfo["name"]) || trim($shopInfo["name"]) === ""){
             throw new ValidationException(["Shop name" => "Shop name is required to build prompt!"]);
         }

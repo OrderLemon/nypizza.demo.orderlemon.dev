@@ -6,6 +6,8 @@ namespace Plugins\Whatsapp\AI;
 
 use Plugins\Whatsapp\AI\MarvinTool;
 use Pmsrapi\V2\Exception\ApiException;
+use Pmsrapi\V2\Exception\OrderingUnavailableException;
+use Pmsrapi\V2\Services\ShopService;
 use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\TrackingService;
 use Pmsrapi\V2\Services\OrderQueryService;
@@ -59,6 +61,7 @@ final class MarvinTools
         private readonly Logger $logger,
         private readonly ShopBackground $shopBackground,
         private readonly CheckoutUpsell $checkoutUpsell,
+        private readonly ShopService $shopService,
     ) {}
 
     /**
@@ -223,6 +226,9 @@ final class MarvinTools
                     . 'given, then call this again with their answer. Nothing was added yet. '
                     . 'If it says deal_not_supported, tell them deals have to be picked on the '
                     . 'web menu and offer to add the items separately instead. '
+                    . 'If it says ordering_closed, nothing was added: the shop has no pickup or '
+                    . 'delivery window left to order for. Tell them, and give shop_phone from '
+                    . '"availability" so they can call. '
                     . 'Always read the returned total back to the shopper. '
                     . 'If the reply has "campaign_nudges", the basket is one step away from a promotion: after '
                     . 'confirming the add, mention it in one short sentence: say what to add ("missing") '
@@ -305,9 +311,12 @@ final class MarvinTools
                     . 'Don\'t read the basket back in that message. If they say yes, call add_to_order '
                     . 'with that product_id and quantity 1, then call checkout_order again. If they say '
                     . 'no, call checkout_order again right away. The offer is made only once per basket. '
-                    . 'If it says logistics_first, there is no link yet because no future pickup or delivery '
-                    . 'time is set: ask in one short question whether they want pickup or delivery, and for '
-                    . 'when. Once they answer, call change_logistics, then call checkout_order again.',
+                    . 'If it says logistics_first, there is no link yet because no pickup or delivery time '
+                    . 'that can still be ordered for is set: ask in one short question whether they want '
+                    . 'pickup or delivery, and for when. If "problem" is cutoff_passed or outside_hours, '
+                    . 'first say their chosen time can no longer be ordered for, and suggest the "next" '
+                    . 'window from "availability". Once they answer, call change_logistics, then call '
+                    . 'checkout_order again.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => new \stdClass(),
@@ -344,6 +353,10 @@ final class MarvinTools
                     . 'If the shopper says "as soon as possible" or "now", send date "asap". If "now" in the result is '
                     . 'outside opening hours, call again with the next opening time and tell the shopper. '
                     . 'If it says date_in_past or invalid_date, ask the shopper for a new time. Do not guess one. '
+                    . 'If it says outside_hours or cutoff_passed, the shop does not take orders for that time '
+                    . '(cutoff_passed: the last order time for it has passed). Tell the shopper, suggest the '
+                    . '"next" window for that type from "availability", and ask for a time inside it. '
+                    . 'If they asked for asap, call again with that window\'s "from" time and tell them. '
                     . 'If it says empty_basket, they have not chosen anything yet.',
                 'input_schema' => [
                     'type'       => 'object',
@@ -416,6 +429,31 @@ final class MarvinTools
                     'required'   => ['language'],
                 ],
             ],
+            [
+                'name'        => MarvinTool::GetOrderingHours->value,
+                'description' =>
+                    'Check whether the shop still takes orders today, until what time, and when the '
+                    . 'next pickup and delivery windows are. Call it whenever the shopper asks until '
+                    . 'when they can order, whether you are still open, or about hours for today or '
+                    . 'tomorrow. Always call it fresh, never answer from memory or earlier messages. '
+                    . 'Takes no arguments. The result has "now", "shop_phone", and for each of pick_up '
+                    . 'and delivery: orderable_today, today (windows with from, until and last_order, '
+                    . 'the last time an order for that window is accepted) and next, the first window '
+                    . 'they can still order for. '
+                    . 'If orderable_today is false, say that ordering for today is closed, that they can '
+                    . 'call the shop on shop_phone, and that they can already order now for next '
+                    . '(its day, and until its last_order time). For example: "Sorry, you can\'t order '
+                    . 'for today anymore. You can call us on +32 …, or order now for tomorrow until 15:00." '
+                    . 'If orderable_today is true, give today\'s last_order time. If next is null for '
+                    . 'both, say you cannot take orders right now and give shop_phone. '
+                    . 'Ordering for a later day is a normal basket: add items as usual, then call '
+                    . 'change_logistics with a time inside that window.',
+                'input_schema' => [
+                    'type'       => 'object',
+                    'properties' => new \stdClass(),
+                    'required'   => [],
+                ],
+            ],
         ];
 
         // Only for shops with a background page configured; others never see it.
@@ -479,6 +517,7 @@ final class MarvinTools
                 MarvinTool::DetectLanguage->value  => $this->detectLanguage($in, $phone),
                 MarvinTool::ChangeLogistics->value => $this->changeLogistics($in, $phone),
                 MarvinTool::ShopBackground->value  => ['page' => $this->shopBackground->text()],
+                MarvinTool::GetOrderingHours->value => $this->shopService->availability(new \DateTimeImmutable()),
                 default       => throw new ApiException("unknown tool: {$name}"),
             };
 
@@ -510,6 +549,7 @@ final class MarvinTools
      */
     private function addToOrder(string $phone, array $input): array
     {
+        
         $productId = (int) ($input['product_id'] ?? 0);
         $quantity  = max(1, min(self::MAX_QUANTITY, (int) ($input['quantity'] ?? 1)));
         $optionIds = is_array($input['option_ids'] ?? null) ? $input['option_ids'] : [];
@@ -566,9 +606,12 @@ final class MarvinTools
             ),
         ];
 
+        try {
+            $order = $this->cartService->updateCart([$item], $phone);
+        } catch (OrderingUnavailableException $e) {
+            return ['ok' => false, 'reason' => 'ordering_closed', 'availability' => $e->availability()];
+        }
 
-        $order = $this->cartService->updateCart([$item], $phone);
-        
         $draft = $this->summarize($order);
 
         $this->attach(MarvinTool::AddToOrder->value, ['draft' => $draft]);
@@ -693,13 +736,16 @@ final class MarvinTools
         // new cart has none, and one set on an earlier visit may have passed.
         $now = new \DateTimeImmutable();
         $moment = $this->storedMoment($full);
-        if ($moment === null || $moment < $now) {
+        $logisticsType = $this->isDelivery($full) ? CartService::DELIVERY_LOGISTIC_TYPE : CartService::PICKUP_LOGISTIC_TYPE;
+        $problem = $moment === null ? 'no_time_set' : $this->shopService->momentProblem($logisticsType, $moment, $now);
+        if ($problem !== null) {
             return [
-                'ok'        => false,
-                'reason'    => 'logistics_first',
-                'logistics' => $draft['logistics'],
-                'now'       => $now->format('l ' . self::MOMENT_FORMAT),
-                'total'     => $full['total'],
+                'ok'           => false,
+                'reason'       => 'logistics_first',
+                'problem'      => $problem,
+                'logistics'    => $draft['logistics'],
+                'availability' => $this->shopService->availability($now),
+                'total'        => $full['total'],
             ];
         }
 
@@ -790,7 +836,11 @@ final class MarvinTools
             return ['ok' => false, 'reason' => 'empty_basket', ...$clock];
         }
 
-        $this->cartService->updateCartLogistics($type, $moment, $phone);
+        try {
+            $this->cartService->updateCartLogistics($type, $moment, $phone);
+        } catch (OrderingUnavailableException $e) {
+            return ['ok' => false, 'reason' => $e->reason(), 'availability' => $e->availability(), ...$clock];
+        }
 
         $logistics = [
             'type'   => CartService::LOGISTIC_LABELS[$type],

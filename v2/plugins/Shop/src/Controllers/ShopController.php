@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Plugins\Shop\Controllers;
 
-use Plugins\Shop\Services\ShopService;
 use Pmsrapi\V2\Exception\ValidationException;
 use Pmsrapi\V2\Http\Response;
+use Pmsrapi\V2\Services\ShopService;
 
 final class ShopController
 {
@@ -35,7 +35,7 @@ final class ShopController
             throw new ValidationException(['phonenumber' => 'Phone number is required']);
         }
 
-        $shop = $this->shops->findByPhone($phoneNumber);
+        $shop = $this->shops->getByPhone($phoneNumber);
 
         if ($shop === null) {
             return Response::error(404, ['not found' => 'No shop for that phone number']);
