@@ -484,7 +484,7 @@ final class WhatsappController
  
     private function welcomeCTA(): array
     {
-        $shopName = ucwords($this->shop["name"]);
+        $shopName = ucwords($this->shopService->current()["name"]);
 
         $greeting = "";
         $channelInvitationMessage = "";
@@ -553,12 +553,12 @@ final class WhatsappController
 
     private function findShop(): bool
     {
-        $this->shopService->getByPhone($this->messagePayload["shop_phone_number"]);
+        $shop = $this->shopService->getByPhone($this->messagePayload["shop_phone_number"]);
 
-        if ($this->shopService->current() === null || !isset($this->shopService->current()['id'])) {
+
+        if ($shop === null || !isset($shop['id'])) {
             return false;
         }
-
 
         if (!defined('shop_id')) {
             define('shop_id', (int) $shop['id']);
@@ -1086,7 +1086,7 @@ final class WhatsappController
 
     private function isAssortment() : bool
     {
-        $shopType = $this->shop["ol_shop_type"];
+        $shopType = $this->shopService->current()["ol_shop_type"];
         if($shopType == null){
             return false;
         }
