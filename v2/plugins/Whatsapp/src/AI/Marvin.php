@@ -437,22 +437,31 @@ final class Marvin
         return basename($this->promptPath(), '.txt');
     }
 
+    /**
+     * Which prompt file this shop uses, first match wins:
+     *
+     *   "marvin": { "prompts": { "shops": { "99": "/path/marvin_pokeperfect.v1.txt" } } }
+     *   shop listed in "wine_shops"  -> marvin.prompts.wine_specialist
+     *   everyone else                -> marvin.prompts.main
+     */
     private function promptPath(): string
     {
-        $wineShops = $this->config->secret("wine_shops",[]);
-
-        if(in_array(shop_id, $wineShops)){
-            $path = $this->config->secret('marvin.prompts.wine_specialist',);
-        }else{
-            $path = $this->config->secret('marvin.prompts.main',);
-        }
-
         if(!defined("shop_id") || !is_numeric(shop_id)){
             throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
         }
 
+        $wineShops = $this->config->secret("wine_shops",[]);
+
+        $key = match (true) {
+            $this->config->hasSecret('marvin.prompts.shops.' . shop_id) => 'marvin.prompts.shops.' . shop_id,
+            in_array(shop_id, $wineShops)                                => 'marvin.prompts.wine_specialist',
+            default                                                      => 'marvin.prompts.main',
+        };
+
+        $path = $this->config->secret($key);
+
         if (!is_string($path) || trim($path) === '') {
-            throw new ApiException('marvin.prompts.main is not set in the secret config. Provided value: ' . var_export($path, true));
+            throw new ApiException("{$key} is not set in the secret config. Provided value: " . var_export($path, true));
         }
 
         return $path;

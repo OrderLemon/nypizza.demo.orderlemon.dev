@@ -16,3 +16,4 @@ mockups/*
 test-env/nypizza.demo.json
 mockups/
 .claude/prompt.md
+.claude/settings.local.json

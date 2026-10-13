@@ -109,6 +109,7 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(AnthropicClient::class),
             $c->get(MarvinTools::class),
             $c->get(MenuService::class),
+            $c->get(ShopService::class),
             $c->get(JsonService::class),
             $c->get(Config::class),
             $c->get(Logger::class),
