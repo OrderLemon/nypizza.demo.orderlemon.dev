@@ -21,7 +21,9 @@ use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Core\Config;
 use Plugins\Whatsapp\Support\LanguageHelper;
 use Plugins\Whatsapp\TypeSafe\Decision;
+use Plugins\Whatsapp\TypeSafe\DecisionHandler;
 use Plugins\Whatsapp\TypeSafe\DecisionService;
+use Plugins\Whatsapp\TypeSafe\LanguageDetector;
 
 
 /**
@@ -57,8 +59,11 @@ final class WhatsappController
 
     private array $messagePayload = [];
 
-    /** TypeSafe's decision for this message, observe mode only (see observeTypeSafe()). */
+    /** TypeSafe's decision for this message (see decideWithTypeSafe()). */
     private ?Decision $typesafe = null;
+
+    /** Whether TypeSafe's decision was acted on, rather than Marvin deciding himself. */
+    private bool $typesafeHandled = false;
 
 
     public function __construct(
@@ -73,6 +78,8 @@ final class WhatsappController
         private readonly TranscribeService $transcribe,
         private readonly LanguageHelper $language,
         private readonly DecisionService $decisions,
+        private readonly DecisionHandler $typesafeHandler,
+        private readonly LanguageDetector $languageDetector,
     ) {}
 
     /**
@@ -151,6 +158,7 @@ final class WhatsappController
             'typesafe' => $this->typesafe === null ? null : $this->typesafe->summary() + [
                 'use_marvin' => $this->typesafe->useMarvin(),
                 'do' => $this->typesafe->do,
+                'handled' => $this->typesafeHandled,
             ],
         ], static fn(mixed $v): bool => $v !== null));
     }
@@ -166,9 +174,25 @@ final class WhatsappController
      */
     private function marvinReply() : array
     {
+        // Only here, where the decision is used: the welcome message for a new
+        // shopper and location replies never ask TypeSafe.
+        $this->decideWithTypeSafe();
 
-        $reply = $this->marvin->reply(
-            $this->transcripts->load($this->messagePayload["phone_number"]),
+        $conversation = $this->transcripts->load($this->messagePayload["phone_number"]);
+
+        // TypeSafe's decision first; when code cannot act on it (or TypeSafe is
+        // unsure or unavailable) Marvin decides and replies as before.
+        $reply = $this->typesafe === null ? null : $this->typesafeHandler->reply(
+            $this->typesafe,
+            $conversation,
+            $this->messagePayload["full_name"],
+            $this->messagePayload["phone_number"],
+            $this->conversationLanguage,
+        );
+        $this->typesafeHandled = $reply !== null;
+
+        $reply ??= $this->marvin->reply(
+            $conversation,
             $this->messagePayload["full_name"],
             language: $this->conversationLanguage,
         );
@@ -625,16 +649,15 @@ final class WhatsappController
      * @return array{sent: bool, error?: string}
      */
     /**
-     * Observe mode: ask TypeSafe what it would decide for this message and keep
-     * the result for the webhook response, without acting on it; Marvin still
-     * handles the message. Runs after the inbound message is in the transcript
-     * and before Marvin replies, so the history is what TypeSafe would see live.
-     * Skipped in production until the TypeSafe handlers are in place.
+     * Ask TypeSafe what to do with this message. Runs at the start of
+     * marvinReply(), after the inbound message is in the transcript and
+     * before anyone replies; marvinReply() acts on the result. The decision is also returned in the webhook
+     * response, so it can be checked from Postman.
      */
-    private function observeTypeSafe(): void
+    private function decideWithTypeSafe(): void
     {
         $message = trim((string) ($this->messagePayload["message"] ?? ''));
-        if ($this->config->isProduction() || $message === '') {
+        if ($message === '') {
             return;
         }
 
@@ -666,8 +689,6 @@ final class WhatsappController
 
         $this->isNewClient = $convEmpty;
         $this->conversrationService->upsertConversation($this->messagePayload["phone_number"]);
-
-        $this->observeTypeSafe();
 
         if (!$this->isNewClient && $this->messagePayload["message_type"] === "location") {
             return $this->handleLocationReply();
@@ -1084,31 +1105,35 @@ final class WhatsappController
 
         $this->isNewClient = $clientResult["new_shop_client"];
 
-        $this->conversationLanguage = $clientResult["record"]["language"];
+        $this->conversationLanguage = $clientResult["record"]["language"] ?? null;
 
-        if($clientResult["new_ol_client"]){
-            //fallback is "en", so no empty results, safe to update global client
-            $this->conversationLanguage = $this->language->detect(
+        // Detect until a language is saved: a new shopper, or one whose first
+        // messages were too short or unclear to save ("ok", an emoji, a name).
+        if ($clientResult["new_ol_client"] || trim((string) $this->conversationLanguage) === '') {
+            $detected = $this->languageDetector->detect(
                 $this->messagePayload["phone_number"],
-                $this->messagePayload["message"] ?? '');
+                $this->messagePayload["message"] ?? '',
+            );
+            $this->conversationLanguage = $detected["language"];
 
-            $this->logger->info("detected language", ["language" => $this->conversationLanguage, "message" => $this->messagePayload["message"]]);
+            $this->logger->info("detected language", $detected + ["message" => $this->messagePayload["message"]]);
 
-            //update the clients table. Otherwise a running script will 
-            //update the clients_data with the wrong language set in clients
-            $this->clientService->upsertClients(
-                $this->messagePayload["phone_number"],
-                [
-                    "full_name" => $this->messagePayload["full_name"],
-                    "language" => $this->conversationLanguage,
-                ]);
-   
-            $this->clientService->upsertClientData(
-                $this->messagePayload["phone_number"],
-                [
-                    "language" => $this->conversationLanguage,
-                ]);
+            if ($detected["save"]) {
+                //update the clients table. Otherwise a running script will
+                //update the clients_data with the wrong language set in clients
+                $this->clientService->upsertClients(
+                    $this->messagePayload["phone_number"],
+                    [
+                        "full_name" => $this->messagePayload["full_name"],
+                        "language" => $this->conversationLanguage,
+                    ]);
 
+                $this->clientService->upsertClientData(
+                    $this->messagePayload["phone_number"],
+                    [
+                        "language" => $this->conversationLanguage,
+                    ]);
+            }
         }
 
     }

@@ -103,6 +103,12 @@ final class Marvin
 
     private ?string $systemText = null;
 
+    /** History turns the writer gets; enough for "yes" and "that one" to make sense. */
+    private const int WRITER_HISTORY = 8;
+
+    /** Writer prompt for this shop, placeholders filled; '' when there is no writer prompt file. */
+    private ?string $writerText = null;
+
     /** @var array<string,mixed>|null */
     private ?array $settings = null;
 
@@ -142,6 +148,51 @@ final class Marvin
      */
     public function reply(array $conversation, ?string $clientName = "", ?string $phone = null, ?string $language = null): array
     {
+        return $this->respond($conversation, $clientName, $phone, $language, null);
+    }
+
+    /**
+     * Word a reply for a decision TypeSafe already made (writer mode).
+     *
+     * $calls are run first, through the same MarvinTools::run() Marvin uses,
+     * so the cart, tracking and the reply's buttons and links behave exactly
+     * as if he had called them. Their results, the products they name and
+     * $note go to Marvin as one internal note on the shopper's message, with
+     * the short writer prompt (marvin.prompts.writer) and no tools: he only
+     * words the reply.
+     *
+     * Without a writer prompt file, the full prompt is used and the calls are
+     * put in the conversation as his own tool calls, as reply() would.
+     *
+     * @param list<array{0: string, 1: array<string,mixed>}> $calls tool name and input, run in order
+     */
+    public function replyWith(
+        array $conversation,
+        ?string $clientName,
+        ?string $phone,
+        ?string $language,
+        array $calls,
+        ?string $note = null,
+    ): array {
+        return $this->respond($conversation, $clientName, $phone, $language, ['mode' => 'writer', 'calls' => $calls, 'note' => $note]);
+    }
+
+    /**
+     * reply(), with an internal note on the shopper's message: what TypeSafe
+     * read when it could not decide on its own. Marvin decides himself, with
+     * the full prompt and all tools.
+     */
+    public function replyWithNote(array $conversation, ?string $clientName, ?string $phone, ?string $language, string $note): array
+    {
+        return $this->respond($conversation, $clientName, $phone, $language, ['mode' => 'hint', 'calls' => [], 'note' => $note]);
+    }
+
+    /**
+     * @param array{mode: string, calls: list<array{0: string, 1: array<string,mixed>}>, note: ?string}|null $seed
+     * @return array<string,mixed>
+     */
+    private function respond(array $conversation, ?string $clientName, ?string $phone, ?string $language, ?array $seed): array
+    {
         $this->updateShopInfo();
 
         $this->clientName = $clientName ?? "";
@@ -167,9 +218,31 @@ final class Marvin
                 throw new ApiException('No phone number in conversation, cannot run tools.');
             }
 
-            $system = $this->systemBlocks();
-            $tools  = $this->tools->definitions();
+            $writer = ($seed['mode'] ?? null) === 'writer' ? $this->writerSystemBlocks() : null;
+            $model  = null;
 
+            if ($writer !== null) {
+                // Writer mode: decided and done; Marvin only words the reply.
+                // Short prompt, recent turns, results in a note, no tools.
+                $system   = $writer;
+                $tools    = [];
+                $model    = $this->config->secret('marvin.writer_model', null);
+                $messages = $this->noteOnShopper(
+                    $this->recent($messages, self::WRITER_HISTORY),
+                    $this->runCalls($seed['calls'], $phone, (string) ($seed['note'] ?? '')),
+                );
+                $this->logger->info('marvin: writer reply', [
+                    'calls'        => array_column($seed['calls'], 0),
+                    'prompt_chars' => mb_strlen($writer[0]['text']),
+                    'model'        => $model,
+                ]);
+            } else {
+                $system = $this->systemBlocks();
+                $tools  = $this->tools->definitions();
+                if ($seed !== null) {
+                    $messages = $this->seed($messages, $seed, $phone);
+                }
+            }
 
             for ($turn = 1; $turn <= self::MAX_TOOL_TURNS; $turn++) {
                 $lastTurn = $turn === self::MAX_TOOL_TURNS;
@@ -177,7 +250,7 @@ final class Marvin
                     $this->logger->warning('marvin: tool turns used up, forcing an answer', ['turns' => $turn - 1]);
                 }
 
-                $body = $this->client->messages($messages, $system, $tools, $lastTurn ? ['type' => 'none'] : null);
+                $body = $this->client->messages($messages, $system, $tools, $lastTurn && $tools !== [] ? ['type' => 'none'] : null, is_string($model) ? $model : null);
 
                 if (($body['stop_reason'] ?? null) !== 'tool_use') {
                     // The only exit that carries an answer. $this->tracking was
@@ -331,6 +404,16 @@ final class Marvin
      */
     public function systemBlocks(): array
     {
+        return [[
+            'type'          => 'text',
+            'text'          => $this->systemText(),
+            'cache_control' => $this->cacheControl(),
+        ]];
+    }
+
+    /** @return array<string,string> */
+    private function cacheControl(): array
+    {
         $cacheControl = ['type' => 'ephemeral'];
 
         $ttl = $this->setting('cache_ttl', '1h');
@@ -338,11 +421,7 @@ final class Marvin
             $cacheControl['ttl'] = $ttl;
         }
 
-        return [[
-            'type'          => 'text',
-            'text'          => $this->systemText(),
-            'cache_control' => $cacheControl,
-        ]];
+        return $cacheControl;
     }
 
     /** The prompt text with the menu substituted where $jsondominos_menu was. */
@@ -737,6 +816,145 @@ final class Marvin
      * @param list<mixed> $content
      * @return list<mixed>
      */
+    /**
+     * Full-prompt path for a decision made before Marvin: the calls as his own
+     * tool calls in one assistant turn, their results (plus the note) as the
+     * next user turn. Without calls, the note goes on the shopper's message.
+     *
+     * @param list<array<string,mixed>> $messages history(), ends with the shopper
+     * @param array{mode: string, calls: list<array{0: string, 1: array<string,mixed>}>, note: ?string} $seed
+     * @return list<array<string,mixed>>
+     */
+    private function seed(array $messages, array $seed, string $phone): array
+    {
+        $note = trim((string) ($seed['note'] ?? ''));
+        if ($seed['calls'] === []) {
+            return $note === '' ? $messages : $this->noteOnShopper($messages, $note);
+        }
+
+        $blocks = $results = [];
+        foreach ($seed['calls'] as [$tool, $input]) {
+            $block = ['type' => 'tool_use', 'id' => 'toolu_ts_' . bin2hex(random_bytes(10)), 'name' => $tool, 'input' => (object) $input];
+            $this->logger->info('marvin: seeded tool call', ['tool' => $tool, 'input' => $input]);
+            $blocks[]  = $block;
+            $results[] = $this->tools->run(['input' => $input] + $block, $phone);
+        }
+        if ($note !== '') {
+            // Tool results first, then text: that order is required in a user turn.
+            $results[] = ['type' => 'text', 'text' => $this->noteText($note)];
+        }
+
+        $messages[] = ['role' => 'assistant', 'content' => $blocks];
+        $messages[] = ['role' => 'user', 'content' => $results];
+
+        return $messages;
+    }
+
+    /**
+     * Writer path: run the calls and put their results, the products they name
+     * and the note into one note text.
+     *
+     * @param list<array{0: string, 1: array<string,mixed>}> $calls
+     */
+    private function runCalls(array $calls, string $phone, string $note): string
+    {
+        $parts = [trim($note)];
+        foreach ($calls as [$tool, $input]) {
+            $this->logger->info('marvin: writer tool call', ['tool' => $tool, 'input' => $input]);
+            $result = $this->tools->run(['type' => 'tool_use', 'id' => 'toolu_ts_' . bin2hex(random_bytes(10)), 'name' => $tool, 'input' => $input], $phone);
+            $parts[] = "Result of {$tool}: " . (is_string($result['content'] ?? null) ? $result['content'] : json_encode($result['content'] ?? null, JSON_UNESCAPED_UNICODE));
+            if (($products = $this->productFacts($input)) !== '') {
+                $parts[] = "Products involved: {$products}";
+            }
+        }
+
+        return implode(' ', array_filter($parts, static fn(string $p): bool => $p !== ''));
+    }
+
+    /**
+     * @param list<array<string,mixed>> $messages
+     * @return list<array<string,mixed>>
+     */
+    private function noteOnShopper(array $messages, string $note): array
+    {
+        $last = array_key_last($messages);
+        if ($note !== '' && $last !== null && is_string($messages[$last]['content'])) {
+            $messages[$last]['content'] .= "\n\n" . $this->noteText($note);
+        }
+
+        return $messages;
+    }
+
+    private function noteText(string $note): string
+    {
+        // Kept free of ")" inside: stripStaleNotes() cuts a note at the first one.
+        return '(SYSTEM NOTE, never repeat this to the shopper: ' . str_replace(['(', ')'], ['[', ']'], $note) . ')';
+    }
+
+    /**
+     * The writer prompt: marvin.prompts.writer_shops.<shop id>, else
+     * marvin.prompts.writer, with its placeholders filled.
+     *
+     * @return list<array<string,mixed>>|null system blocks, or null when there is no writer prompt file
+     */
+    private function writerSystemBlocks(): ?array
+    {
+        if ($this->writerText === null) {
+            $path = $this->config->secret('marvin.prompts.writer_shops.' . (defined('shop_id') ? shop_id : ''), null)
+                ?? $this->config->secret('marvin.prompts.writer', null);
+            if (!is_string($path) || !is_readable($path)) {
+                $this->logger->info('marvin: no writer prompt file, using the full prompt', ['path' => $path]);
+                $this->writerText = '';
+            } else {
+                $supports = array_values((array) $this->config->secret('support', []));
+                $this->writerText = (string) preg_replace('/\{\{[A-Z_0-9]+\}\}/', '', strtr((string) file_get_contents($path), [
+                    '{{COMPANY_NAME}}' => (string) ($this->shopInfo['name'] ?? ''),
+                    '{{CLIENT_NAME}}'  => ucwords($this->clientName),
+                    '{{SUPPORT_1}}'    => ucwords((string) ($supports[0] ?? '')),
+                    '{{SUPPORT_2}}'    => ucwords((string) ($supports[1] ?? $supports[0] ?? '')),
+                ]));
+            }
+        }
+
+        return $this->writerText === '' ? null : [[
+            'type'          => 'text',
+            'text'          => $this->writerText,
+            'cache_control' => $this->cacheControl(),
+        ]];
+    }
+
+    /**
+     * The last $max turns of history(), still starting with the shopper.
+     *
+     * @param list<array<string,mixed>> $messages
+     * @return list<array<string,mixed>>
+     */
+    private function recent(array $messages, int $max): array
+    {
+        $messages = array_slice($messages, -$max);
+        while ($messages !== [] && $messages[0]['role'] !== 'user') {
+            array_shift($messages);
+        }
+
+        return array_values($messages);
+    }
+
+    /** Menu data for the products a tool input names (product_id / product_ids), as JSON; '' for none. */
+    private function productFacts(array $input): string
+    {
+        $ids = array_map('intval', array_filter([$input['product_id'] ?? null, ...(array) ($input['product_ids'] ?? [])]));
+        if ($ids === []) {
+            return '';
+        }
+
+        $products = array_values(array_filter(
+            $this->menuService->promptProducts(),
+            static fn(array $p): bool => in_array((int) ($p['id'] ?? 0), $ids, true),
+        ));
+
+        return $products === [] ? '' : (string) json_encode($products, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
     private function normaliseToolUse(array $content): array
     {
         foreach ($content as $i => $block) {

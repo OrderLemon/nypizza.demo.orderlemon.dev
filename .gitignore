@@ -25,3 +25,5 @@ v2/plugins/Whatsapp/tests/decision_service_test.php
 v2/plugins/Whatsapp/bin/typesafe_eval.php
 test-env/seed.sql
 test-env/entrypoint.sh
+v2/plugins/Whatsapp/bin/reset_shopper.php
+test-env/flows/99.flow.json.draft

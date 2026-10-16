@@ -36,9 +36,12 @@ use Pmsrapi\V2\Services\TranscribeService;
 use Pmsrapi\V2\Cache\RedisClient;
 use Plugins\Whatsapp\Support\LanguageHelper;
 use Plugins\Whatsapp\Support\ChannelInvitationLinker;
+use Plugins\Whatsapp\TypeSafe\DecisionHandler;
 use Plugins\Whatsapp\TypeSafe\DecisionService;
 use Plugins\Whatsapp\TypeSafe\FlowLoader;
+use Plugins\Whatsapp\TypeSafe\LanguageDetector;
 use Plugins\Whatsapp\TypeSafe\MenuDigest;
+use Plugins\Whatsapp\TypeSafe\OrderSlots;
 use Plugins\Whatsapp\TypeSafe\StateBuilder;
 use Plugins\Whatsapp\TypeSafe\TypeSafeClient;
 
@@ -150,6 +153,27 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(LanguageHelper::class),
         ));
 
+        $registrar->singleton(LanguageDetector::class, static fn(Container $c): LanguageDetector => new LanguageDetector(
+            $c->get(TypeSafeClient::class),
+            $c->get(FlowLoader::class),
+            $c->get(LanguageHelper::class),
+            $c->get(Logger::class),
+        ));
+
+        $registrar->singleton(OrderSlots::class, static fn(Container $c): OrderSlots => new OrderSlots(
+            $c->get(MenuService::class),
+        ));
+
+        $registrar->singleton(DecisionHandler::class, static fn(Container $c): DecisionHandler => new DecisionHandler(
+            $c->get(Marvin::class),
+            $c->get(FlowLoader::class),
+            $c->get(OrderSlots::class),
+            $c->get(JsonService::class),
+            $c->get(ShopService::class),
+            $c->get(Config::class),
+            $c->get(Logger::class),
+        ));
+
         $registrar->singleton(
             WhatsappGateway::class,
             static fn(Container $c): WhatsappGateway => new WhatsappGateway(
@@ -173,6 +197,8 @@ final class WhatsappPlugin extends AbstractPlugin
                 $c->get(TranscribeService::class),
                 $c->get(LanguageHelper::class),
                 $c->get(DecisionService::class),
+                $c->get(DecisionHandler::class),
+                $c->get(LanguageDetector::class),
             ),
         );
     }

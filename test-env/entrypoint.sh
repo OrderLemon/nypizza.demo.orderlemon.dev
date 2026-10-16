@@ -28,6 +28,13 @@ cp "${MARVIN_PROMPT}" /home/demo.data/marvin_prompts/marvin.v6.txt
 # so whichever marvin.prompts.* the secret config points to exists.
 cp /opt/pmsrapi/marvin*.txt /home/demo.data/marvin_prompts/
 mkdir -p "/home/demo.data/${SHOP_ID}/conversations"
+# Per-shop TypeSafe flows: test-env/flows/<shop id>.flow.json -> /home/demo.data/<shop id>/flow.json
+for flow in /opt/pmsrapi/test-env/flows/*.flow.json; do
+  [ -f "$flow" ] || continue
+  id="$(basename "$flow" .flow.json)"
+  mkdir -p "/home/demo.data/${id}"
+  cp "$flow" "/home/demo.data/${id}/flow.json"
+done
 cp "${MENU}" "/home/demo.data/${SHOP_ID}/menu.json"
 mkdir -p /home/errors/
 touch /home/errors/nypizza.demo.log

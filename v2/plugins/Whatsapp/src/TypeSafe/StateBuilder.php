@@ -18,7 +18,7 @@ use Pmsrapi\V2\Services\OrderQueryService;
  *   {
  *     "latest_message": "Doe deze maar",
  *     "history": [{"from": "shopper", "text": "..."}, {"from": "Marvin", "text": "..."}],
- *     "basket": [{"item": "Margherita Pizza", "quantity": 1, "options": ["Medium (30cm)"]}],
+ *     "basket": [{"line_id": 12, "item": "Margherita Pizza", "quantity": 1, "options": ["Medium (30cm)"]}],
  *     "active_order": {"on_its_way": true, "count": 1},
  *     "checkout_link_sent": false
  *   }
@@ -62,7 +62,7 @@ final class StateBuilder
      * @return array{
      *   latest_message: string,
      *   history: list<array{from: string, text: string}>,
-     *   basket: list<array{item: string, quantity: int, options: list<string>}>,
+     *   basket: list<array{line_id: int, item: string, quantity: int, options: list<string>}>,
      *   active_order: array{on_its_way: bool, count: int},
      *   checkout_link_sent: bool
      * }
@@ -150,7 +150,7 @@ final class StateBuilder
         return $sent;
     }
 
-    /** @return list<array{item: string, quantity: int, options: list<string>}> */
+    /** @return list<array{line_id: int, item: string, quantity: int, options: list<string>}> */
     private function basket(string $phone): array
     {
         $shopId = $this->shopId();
@@ -183,6 +183,7 @@ final class StateBuilder
                 continue;
             }
             $basket[] = [
+                'line_id'  => (int) $line['id'],
                 'item'     => (string) $line['item_description'],
                 'quantity' => (int) $line['quantity'],
                 'options'  => $options[(int) $line['id']] ?? [],

@@ -51,6 +51,12 @@ final readonly class Flow
         return (int) ($this->data['languages']['save_min_words'] ?? 3);
     }
 
+    /** A detected language is only saved for the shopper at or above this confidence. */
+    public function saveLanguageMinConfidence(): float
+    {
+        return (float) ($this->data['languages']['save_min_confidence'] ?? 0.8);
+    }
+
     /** @return list<array<string, mixed>> */
     public function router(): array
     {
@@ -104,6 +110,14 @@ final readonly class Flow
         }
 
         return $texts[$language] ?? $texts[$this->defaultLanguage()] ?? $texts['en'] ?? null;
+    }
+
+    /** Text for a key in exactly this language, without falling back; null when missing. */
+    public function textIn(string $key, string $language): ?string
+    {
+        $text = $this->data['texts'][$key][$language] ?? null;
+
+        return is_string($text) ? $text : null;
     }
 
     /** @return array<string, mixed> the whole merged flow, for logs and debugging */

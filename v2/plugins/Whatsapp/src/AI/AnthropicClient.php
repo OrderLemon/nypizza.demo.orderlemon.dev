@@ -103,18 +103,20 @@ final class AnthropicClient
      * @param array<string,mixed>|null $toolChoice e.g. ['type' => 'none'] to
      *                                            force a text answer while
      *                                            keeping $tools (and the cache)
+     * @param string|null              $model     another model for this call only
      * @return array<string,mixed>
      *
      * @throws ApiException on a non-retryable failure
      */
-    public function messages(array $messages, array $system, array $tools = [], ?array $toolChoice = null): array
+    public function messages(array $messages, array $system, array $tools = [], ?array $toolChoice = null, ?string $model = null): array
     {
         if ($messages === []) {
             throw new ApiException('cannot call anthropic with an empty messages array');
         }
 
         $payload = [
-            'model'      => $this->model,
+            // $model overrides the configured one for this call (Marvin's writer mode).
+            'model'      => $model !== null && $model !== '' ? $model : $this->model,
             'max_tokens' => $this->maxTokens,
             'system'     => array_values($system),
             'messages'   => array_values($messages),

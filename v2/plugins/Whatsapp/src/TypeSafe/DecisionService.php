@@ -67,7 +67,7 @@ final class DecisionService
     {
         try {
             $flow ??= $this->flows->forShop();
-            [$questions, $maps] = $this->questions($flow);
+            [$questions, $maps] = $this->questions($flow, $state);
             $result = $this->client->ask($state, $questions);
             $decision = $this->read($result, $flow, $maps);
         } catch (TypeSafeException $e) {
@@ -92,10 +92,11 @@ final class DecisionService
     // ---------------------------------------------------------------- questions
 
     /**
+     * @param array<string, mixed> $state
      * @return array{0: array<string, array<string, mixed>>, 1: array<string, array<string, string>>}
      *         questions, and per config question: option key => option label
      */
-    private function questions(Flow $flow): array
+    private function questions(Flow $flow, array $state): array
     {
         $router = [];
         foreach ($flow->router() as $branch) {
@@ -209,6 +210,41 @@ final class DecisionService
             ];
         }
 
+        // Which basket line the message is about, and how many to remove;
+        // only when the basket has lines (StateBuilder gives their ids).
+        $lines = [];
+        foreach ((array) ($state['basket'] ?? []) as $line) {
+            if (is_array($line) && isset($line['line_id'], $line['item'])) {
+                $options = (array) ($line['options'] ?? []);
+                $lines['l' . (int) $line['line_id']] = sprintf('%s x%d', $line['item'], (int) ($line['quantity'] ?? 1))
+                    . ($options !== [] ? ', ' . implode(', ', $options) : '');
+            }
+        }
+        if ($lines !== []) {
+            $questions['basket_line'] = [
+                'type' => 'choice',
+                'instructions' => self::CONTEXT . ' Which line of `basket` is `latest_message` about, for example to '
+                    . 'remove it or change how many? Use `history` when they refer to it with that one or the second one.',
+                'criteria' => $lines + [
+                    'none' => 'The message is not about a line in the basket',
+                    'several' => 'More than one line, or it is not clear which one',
+                ],
+            ];
+            $questions['remove_quantity'] = [
+                'type' => 'choice',
+                'instructions' => 'How many units does `latest_message` ask to take out of the basket line it is about?',
+                'criteria' => [
+                    'all' => 'All of them, or the whole line',
+                    'one' => 'One', 'two' => 'Two', 'three' => 'Three', 'four_or_more' => 'Four or more',
+                    'not_mentioned' => 'No number is given',
+                ],
+            ];
+            $maps['__basket'] = array_map(
+                static fn(array $l): string => (string) (int) ($l['quantity'] ?? 1),
+                array_column(array_filter((array) $state['basket'], static fn($l) => is_array($l) && isset($l['line_id'])), null, 'line_id'),
+            );
+        }
+
         return [$questions, $maps];
     }
 
@@ -234,6 +270,13 @@ final class DecisionService
             $item->choice === 'several'  => Decision::ITEM_SEVERAL,
             default                      => Decision::ITEM_NONE,
         };
+
+        $basketQuantities = $maps['__basket'] ?? [];
+        unset($maps['__basket']);
+
+        $line = $result->has('basket_line') ? $result->choice('basket_line') : null;
+        $lineId = $line !== null && preg_match('/^l(\d+)$/', $line->choice, $m) === 1 ? (int) $m[1] : null;
+        $remove = $result->has('remove_quantity') ? $result->choice('remove_quantity')->choice : null;
 
         $options = [];
         foreach ($maps as $questionId => $map) {
@@ -269,6 +312,12 @@ final class DecisionService
             modification: (float) $result->noul('modification')->noul,
             orderTime: $time->choice === 'not_mentioned' ? null : $time->choice,
             logistics: $logistics->choice === 'not_mentioned' ? null : $logistics->choice,
+            basketLineId: $lineId,
+            basketLineQuantity: $lineId === null || !isset($basketQuantities[$lineId]) ? null : (int) $basketQuantities[$lineId],
+            basketLineConfidence: (float) ($line?->confidence ?? 0.0),
+            removeCount: match ($remove) {
+                'one' => 1, 'two' => 2, 'three' => 3, 'four_or_more' => 4, default => null,
+            },
             tokens: $result->inputTokens + $result->outputTokens,
             seconds: $result->seconds,
         );

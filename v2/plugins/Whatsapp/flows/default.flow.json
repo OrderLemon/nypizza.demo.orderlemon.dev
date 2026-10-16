@@ -3,71 +3,119 @@
     "threshold": 0.6,
     "history_turns": 4
   },
-
   "languages": {
     "default": "en",
-    "supported": ["nl", "en", "tr", "es", "de", "fr"],
-    "save_min_words": 3
+    "supported": [
+      "nl",
+      "en",
+      "tr",
+      "es",
+      "de",
+      "fr"
+    ],
+    "save_min_words": 3,
+    "save_min_confidence": 0.8
   },
-
   "router": [
-    { "id": "greeting", "do": "tool:greet_with_usual",
-      "description": "Only a greeting such as hi, hoi, hallo, hello, merhaba, with no other request" },
-    { "id": "show_products", "do": "tool:filter_products",
-      "description": "Wants to see menu items: names a dish or category, asks what there is, what has meat or is vegan, which drinks, what is popular or what something costs" },
-    { "id": "order", "do": "order",
-      "description": "Wants to order or add items, or answers a question about an item being ordered (size, base, which one)" },
-    { "id": "remove", "do": "tool:remove_from_order",
-      "description": "Wants to take items out of the basket or order fewer" },
-    { "id": "view_cart", "do": "tool:get_cart",
-      "description": "Wants to see what is in the basket" },
-    { "id": "checkout", "do": "tool:checkout_order",
-      "description": "Wants to finish the order and pay" },
-    { "id": "logistics", "do": "tool:change_logistics",
-      "description": "Chooses pickup or delivery, or a pickup or delivery time" },
-    { "id": "track_order", "do": "tool:track_order",
-      "description": "Asks where an order that is already placed is, or when it arrives" },
-    { "id": "reorder", "do": "tool:get_usual_for_user",
-      "description": "Wants the same as last time or their usual order" },
-    { "id": "language_change", "do": "language",
-      "description": "Asks the assistant to speak another language, or taps a language button" },
-    { "id": "faq", "do": "faq",
-      "description": "Asks a question about the shop or the food that is not about choosing items: opening hours, locations, delivery times, allergens, halal, nutrition, payment" },
-    { "id": "handoff", "do": "handoff",
+    {
+      "id": "greeting",
+      "do": "tool:greet_with_usual",
+      "description": "Only a greeting such as hi, hoi, hallo, hello, merhaba, with no other request"
+    },
+    {
+      "id": "show_products",
+      "do": "tool:filter_products",
+      "description": "Wants to see menu items: names a dish or category, asks what there is, what has meat or is vegan, which drinks, what is popular or what something costs"
+    },
+    {
+      "id": "order",
+      "do": "order",
+      "description": "Wants to order or add items, or answers a question about an item being ordered (size, base, which one)"
+    },
+    {
+      "id": "remove",
+      "do": "tool:remove_from_order",
+      "description": "Wants to take items out of the basket or order fewer"
+    },
+    {
+      "id": "view_cart",
+      "do": "tool:get_cart",
+      "description": "Wants to see what is in the basket"
+    },
+    {
+      "id": "checkout",
+      "do": "tool:checkout_order",
+      "description": "Wants to finish the order and pay"
+    },
+    {
+      "id": "logistics",
+      "do": "tool:change_logistics",
+      "description": "Chooses pickup or delivery, or a pickup or delivery time"
+    },
+    {
+      "id": "track_order",
+      "do": "tool:track_order",
+      "description": "Asks where an order that is already placed is, or when it arrives"
+    },
+    {
+      "id": "reorder",
+      "do": "tool:get_usual_for_user",
+      "description": "Wants the same as last time or their usual order"
+    },
+    {
+      "id": "language_change",
+      "do": "language",
+      "description": "Asks the assistant to speak another language, or taps a language button"
+    },
+    {
+      "id": "faq",
+      "do": "faq",
+      "description": "Asks a question about the shop or the food that is not about choosing items: opening hours, locations, delivery times, allergens, halal, nutrition, payment"
+    },
+    {
+      "id": "handoff",
+      "do": "handoff",
       "description": "Wants something only staff can do: refunds, money back, discounts, price corrections, complaints about an order",
-      "instructions": "Apologise once and show understanding. Say you cannot change prices or send money yourself and that a colleague will follow up. Do not argue about the price." },
-    { "id": "no_action", "do": "marvin",
-      "description": "Nothing to do: thanks, okay, browsing, saying they are busy, apologising" },
-    { "id": "unclear", "do": "marvin",
-      "description": "Cannot tell what the shopper wants, or which of several offered options they mean" }
+      "instructions": "Apologise once and show understanding. Say you cannot change prices or send money yourself, and give them the team contacts from the facts. Do not argue about the price and do not promise that someone will contact them."
+    },
+    {
+      "id": "no_action",
+      "do": "marvin",
+      "description": "Nothing to do: thanks, okay, browsing, saying they are busy, apologising"
+    },
+    {
+      "id": "unclear",
+      "do": "marvin",
+      "description": "Cannot tell what the shopper wants, or which of several offered options they mean"
+    }
   ],
-
   "faq": [
-    { "id": "hours",
+    {
+      "id": "hours",
       "match": "Opening hours, whether the shop is open now or tonight, until when they can order",
-      "do": "tool:get_ordering_hours" },
-    { "id": "locations",
+      "do": "tool:get_ordering_hours"
+    },
+    {
+      "id": "locations",
       "match": "Where the shops are, which shop is nearby, addresses",
-      "answer_from": "stores" }
+      "answer_from": "stores"
+    }
   ],
-
   "ordering": {
     "aliases": {},
     "multi_item": "ask_one_by_one"
   },
-
   "handoff": {
     "answer": "handoff.answer"
   },
-
   "texts": {
     "handoff.answer": {
-      "en": "I can't arrange that myself. I'll pass it on to a colleague.",
-      "nl": "Dat kan ik zelf niet regelen. Ik geef het door aan een collega.",
-      "tr": "Bunu kendim ayarlayamam. Bir meslektaşıma ileteceğim.",
-      "es": "No puedo encargarme de eso yo mismo. Se lo paso a un compañero.",
-      "de": "Das kann ich nicht selbst regeln. Ich gebe es an einen Kollegen weiter.",
-      "fr": "Je ne peux pas m'en occuper moi-même. Je transmets à un collègue."
+      "en": "I can't arrange that myself. Please contact our team directly: {{SUPPORT_1}} or {{SUPPORT_2}}",
+      "nl": "Dat kan ik zelf niet regelen. Neem direct contact op met ons team: {{SUPPORT_1}} of {{SUPPORT_2}}",
+      "tr": "Bunu kendim ayarlayamam. Lütfen doğrudan ekibimizle iletişime geçin: {{SUPPORT_1}} veya {{SUPPORT_2}}",
+      "es": "No puedo encargarme de eso yo mismo. Contacta directamente con nuestro equipo: {{SUPPORT_1}} o {{SUPPORT_2}}",
+      "de": "Das kann ich nicht selbst regeln. Bitte wende dich direkt an unser Team: {{SUPPORT_1}} oder {{SUPPORT_2}}",
+      "fr": "Je ne peux pas m'en occuper moi-même. Contactez directement notre équipe : {{SUPPORT_1}} ou {{SUPPORT_2}}"
     }
   }
 }

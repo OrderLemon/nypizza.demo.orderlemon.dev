@@ -15,6 +15,8 @@ namespace Plugins\Whatsapp\TypeSafe;
  *   faq           matching FAQ id (null when none)
  *   order slots   product, config options (size, base, …), quantity,
  *                 ingredient change, order time, pickup/delivery
+ *   basket line   which basket line the message is about, and how many of
+ *                 it to remove (null: all of it); only when the basket has lines
  *
  * A fallback decision (TypeSafe or data unavailable) has $ok = false and a
  * reason; useMarvin() is then true and the message goes to Marvin as before.
@@ -53,6 +55,10 @@ final readonly class Decision
         public float $modification = 0.0,
         public ?string $orderTime = null,
         public ?string $logistics = null,
+        public ?int $basketLineId = null,
+        public ?int $basketLineQuantity = null,
+        public float $basketLineConfidence = 0.0,
+        public ?int $removeCount = null,
         public int $tokens = 0,
         public float $seconds = 0.0,
     ) {}
@@ -121,6 +127,8 @@ final readonly class Decision
             'modify'     => $this->wantsModification() ?: null,
             'time'       => $this->orderTime,
             'logistics'  => $this->logistics,
+            'line'       => $this->basketLineId,
+            'remove'     => $this->removeCount,
             'tokens'     => $this->tokens,
             'seconds'    => round($this->seconds, 2),
         ], static fn(mixed $v): bool => $v !== null && $v !== []);

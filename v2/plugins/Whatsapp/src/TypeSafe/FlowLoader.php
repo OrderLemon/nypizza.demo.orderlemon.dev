@@ -36,6 +36,9 @@ final class FlowLoader
     private const array ANSWER_SOURCES = ['stores'];
     private const array MULTI_ITEM = ['ask_one_by_one'];
 
+    /** The ways an FAQ entry can be answered; an entry has exactly one. */
+    private const array ANSWER_KEYS = ['answer', 'facts', 'do', 'answer_from'];
+
     /** Transcript-only "tools" that are not real Marvin tools. */
     private const array NOT_TOOLS = ['idle_reminder', 'checkout_completed', 'order_lost'];
 
@@ -168,7 +171,13 @@ final class FlowLoader
                 continue;
             }
             unset($change['disabled']);
-            $entries[$id] = array_merge($entries[$id] ?? [], $change);
+            $base = $entries[$id] ?? [];
+            // An entry answers in one way only: a shop that sets a new way
+            // (e.g. answer_from instead of do) replaces the shared one.
+            if (array_intersect(self::ANSWER_KEYS, array_keys($change)) !== []) {
+                $base = array_diff_key($base, array_flip(self::ANSWER_KEYS));
+            }
+            $entries[$id] = array_merge($base, $change);
         }
 
         return array_values($entries);
@@ -214,6 +223,16 @@ final class FlowLoader
             $errors[] = 'languages.supported must be a list of two-letter codes';
         } elseif (!$this->isLanguage($default) || !in_array($default, $supported, true)) {
             $errors[] = 'languages.default must be one of languages.supported';
+        }
+
+        foreach (['save_min_confidence'] as $key) {
+            $value = $flow['languages'][$key] ?? 0.8;
+            if (!is_int($value) && !is_float($value) || $value < 0 || $value > 1) {
+                $errors[] = "languages.{$key} must be a number from 0 to 1";
+            }
+        }
+        if (!is_int($flow['languages']['save_min_words'] ?? 3) || ($flow['languages']['save_min_words'] ?? 3) < 0) {
+            $errors[] = 'languages.save_min_words must be a whole number';
         }
 
         $router = $flow['router'] ?? null;
@@ -302,7 +321,7 @@ final class FlowLoader
     private function validateFaqAnswer(array $entry, array $flow, array &$errors): void
     {
         $id = (string) ($entry['id'] ?? '');
-        $ways = array_values(array_intersect(['answer', 'facts', 'do', 'answer_from'], array_keys($entry)));
+        $ways = array_values(array_intersect(self::ANSWER_KEYS, array_keys($entry)));
         if (count($ways) !== 1) {
             $errors[] = "faq '{$id}' needs exactly one of answer, facts, do, answer_from";
 
