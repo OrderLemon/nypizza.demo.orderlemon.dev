@@ -1,7 +1,7 @@
 -- DEV/TEST fixture data. ⚠ NEVER SHIP TO PRODUCTION.
 USE pmsrapi_test;
 
-CREATE TABLE `orders_active_98` (
+CREATE TABLE `orders_active_99` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `phonenumber` varchar(14) NOT NULL,
   `client_reference` varchar(20) DEFAULT NULL,
@@ -58,7 +58,7 @@ CREATE TABLE `orders_active_98` (
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `order_items_active_98` (
+CREATE TABLE `order_items_active_99` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `product_id` int(11) NOT NULL,
   `campaign_id` int(11) DEFAULT NULL,
@@ -75,10 +75,10 @@ CREATE TABLE `order_items_active_98` (
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Same shape as orders_active_98/order_items_active_98. Rows are moved here
+-- Same shape as orders_active_99/order_items_active_99. Rows are moved here
 -- (not copied) by OrderQueryService::archiveOrder(), which ConversationService
 -- calls when it archives a conversation that has an order attached.
-CREATE TABLE `orders_archive_98` (
+CREATE TABLE `orders_archive_99` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `phonenumber` varchar(14) NOT NULL,
   `client_reference` varchar(20) DEFAULT NULL,
@@ -136,7 +136,7 @@ CREATE TABLE `orders_archive_98` (
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `order_items_archive_98` (
+CREATE TABLE `order_items_archive_99` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `product_id` int(11) NOT NULL,
   `campaign_id` int(11) DEFAULT NULL,
@@ -153,7 +153,7 @@ CREATE TABLE `order_items_archive_98` (
   PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `clients_98` (
+CREATE TABLE `clients_99` (
   `phonenumber` varchar(14) NOT NULL,
   `reference` varchar(20) DEFAULT NULL,
   `full_name` varchar(200) DEFAULT NULL,
@@ -184,7 +184,7 @@ CREATE TABLE `clients_98` (
   PRIMARY KEY (`phonenumber`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-CREATE TABLE `conversations_98` (
+CREATE TABLE `conversations_99` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `phonenumber` varchar(14) NOT NULL,
   `start_time` datetime NOT NULL,
@@ -234,9 +234,9 @@ CREATE TABLE `conversations_98` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Same shape as conversations_98, plus archived_at. Rows are moved here (not
+-- Same shape as conversations_99, plus archived_at. Rows are moved here (not
 -- copied) by v2/src/Scripts/Conversations.php once a conversation goes idle.
-CREATE TABLE `conversations_archive_98` (
+CREATE TABLE `conversations_archive_99` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `phonenumber` varchar(14) NOT NULL,
   `start_time` datetime NOT NULL,
@@ -387,12 +387,65 @@ INSERT INTO shops (
   stripe_fee_amount, stripe_comission_percentage,
   sent_subscription_reminder, sent_product_reminder, sent_link_n_qr, sent_widget
 ) VALUES (
-  98, 1, 'New York Pizza',
+  99, 1, 'New York Pizza',
   'be', '', 'Kasterlee', '2460', 'Hofstraat 26B',
   '3197058016728', 'fOiS0K8Twvy43PfmwrNPuEKSH2FGCKJOjFgxkrZMg5AgFBJU1UGhIb3J5a4SVTgD',
   0, 0,
   35, 1.5,
   0, 0, 0, 0
 );
-INSERT INTO conversations_98 (phonenumber, start_time, step)
+INSERT INTO conversations_99 (phonenumber, start_time, step)
 VALUES ('40757976655', '2026-08-21 13:27:12', 0);
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Tables the WhatsApp flow needs that were missing. Columns follow what the
+-- code reads and writes (ClientService, ShopService, OrderQueryService); the
+-- production tables may have more.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Global client, one row per phone number (ClientService::upsertClients).
+CREATE TABLE `clients` (
+  `phonenumber` varchar(14) NOT NULL,
+  `first_name` varchar(30) DEFAULT NULL,
+  `last_name` varchar(40) DEFAULT NULL,
+  `full_name` varchar(80) DEFAULT NULL,
+  `language` varchar(2) DEFAULT NULL,
+  `date_added` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`phonenumber`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Opening hours per shop (ShopService). event_type: 1 business hours,
+-- 2 pickup, 3 delivery. day_of_week: 0 = Monday … 6 = Sunday.
+CREATE TABLE `calendar_99` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `event_type` int(11) NOT NULL,
+  `day_of_week` int(11) DEFAULT NULL,
+  `start_time` time DEFAULT NULL,
+  `end_time` time DEFAULT NULL,
+  `last_order_time` time DEFAULT NULL,
+  `enabled` tinyint(1) DEFAULT 1,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Every day: pickup 11:00–22:00 (last order 21:45), delivery 12:00–21:30 (last order 21:00).
+INSERT INTO calendar_99 (event_type, day_of_week, start_time, end_time, last_order_time) VALUES
+  (2, 0, '11:00', '22:00', '21:45'), (2, 1, '11:00', '22:00', '21:45'), (2, 2, '11:00', '22:00', '21:45'),
+  (2, 3, '11:00', '22:00', '21:45'), (2, 4, '11:00', '22:00', '21:45'), (2, 5, '11:00', '22:00', '21:45'),
+  (2, 6, '11:00', '22:00', '21:45'),
+  (3, 0, '12:00', '21:30', '21:00'), (3, 1, '12:00', '21:30', '21:00'), (3, 2, '12:00', '21:30', '21:00'),
+  (3, 3, '12:00', '21:30', '21:00'), (3, 4, '12:00', '21:30', '21:00'), (3, 5, '12:00', '21:30', '21:00'),
+  (3, 6, '12:00', '21:30', '21:00');
+
+-- Company of the shop (shops.company_id), used for receipts.
+CREATE TABLE `companies` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(200) NOT NULL,
+  `vat` varchar(30) DEFAULT NULL,
+  `country` varchar(2) DEFAULT NULL,
+  `city` varchar(80) DEFAULT NULL,
+  `zip` varchar(10) DEFAULT NULL,
+  `street` varchar(90) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+INSERT INTO companies (id, name, country, city, zip, street) VALUES
+  (1, 'New York Pizza Demo', 'be', 'Kasterlee', '2460', 'Hofstraat 26B');

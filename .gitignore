@@ -17,3 +17,11 @@ test-env/nypizza.demo.json
 mockups/
 .claude/prompt.md
 .claude/settings.local.json
+v2/plugins/Whatsapp/tests/typesafe_client_test.php
+v2/plugins/Whatsapp/tests/state_builder_test.php
+v2/plugins/Whatsapp/tests/flow_loader_test.php
+v2/plugins/Whatsapp/tests/fake_typesafe.php
+v2/plugins/Whatsapp/tests/decision_service_test.php
+v2/plugins/Whatsapp/bin/typesafe_eval.php
+test-env/seed.sql
+test-env/entrypoint.sh

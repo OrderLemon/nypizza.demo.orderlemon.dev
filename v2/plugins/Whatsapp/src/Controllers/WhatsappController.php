@@ -20,6 +20,8 @@ use Pmsrapi\V2\Http\Response;
 use Pmsrapi\V2\Support\Logger;
 use Pmsrapi\V2\Core\Config;
 use Plugins\Whatsapp\Support\LanguageHelper;
+use Plugins\Whatsapp\TypeSafe\Decision;
+use Plugins\Whatsapp\TypeSafe\DecisionService;
 
 
 /**
@@ -55,6 +57,9 @@ final class WhatsappController
 
     private array $messagePayload = [];
 
+    /** TypeSafe's decision for this message, observe mode only (see observeTypeSafe()). */
+    private ?Decision $typesafe = null;
+
 
     public function __construct(
         private readonly WhatsappGateway $gateway,
@@ -67,6 +72,7 @@ final class WhatsappController
         private readonly ChatTranscriptService $transcripts,
         private readonly TranscribeService $transcribe,
         private readonly LanguageHelper $language,
+        private readonly DecisionService $decisions,
     ) {}
 
     /**
@@ -136,13 +142,17 @@ final class WhatsappController
             ]);
         }
 
-        return Response::ok([
+        return Response::ok(array_filter([
             'received' => true,
             'account' => $this->messagePayload["account"],
             'sender' => $this->messagePayload["phone_number"],
             'message_type' => $this->messagePayload["message_type"],
             'reply' => $reply,
-        ]);
+            'typesafe' => $this->typesafe === null ? null : $this->typesafe->summary() + [
+                'use_marvin' => $this->typesafe->useMarvin(),
+                'do' => $this->typesafe->do,
+            ],
+        ], static fn(mixed $v): bool => $v !== null));
     }
 
     /**
@@ -614,6 +624,23 @@ final class WhatsappController
      *
      * @return array{sent: bool, error?: string}
      */
+    /**
+     * Observe mode: ask TypeSafe what it would decide for this message and keep
+     * the result for the webhook response, without acting on it; Marvin still
+     * handles the message. Runs after the inbound message is in the transcript
+     * and before Marvin replies, so the history is what TypeSafe would see live.
+     * Skipped in production until the TypeSafe handlers are in place.
+     */
+    private function observeTypeSafe(): void
+    {
+        $message = trim((string) ($this->messagePayload["message"] ?? ''));
+        if ($this->config->isProduction() || $message === '') {
+            return;
+        }
+
+        $this->typesafe = $this->decisions->decide($this->messagePayload["phone_number"], $message);
+    }
+
     private function reply(): array
     {
 
@@ -639,6 +666,8 @@ final class WhatsappController
 
         $this->isNewClient = $convEmpty;
         $this->conversrationService->upsertConversation($this->messagePayload["phone_number"]);
+
+        $this->observeTypeSafe();
 
         if (!$this->isNewClient && $this->messagePayload["message_type"] === "location") {
             return $this->handleLocationReply();
