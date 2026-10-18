@@ -20,42 +20,56 @@
     {
       "id": "greeting",
       "do": "tool:greet_with_usual",
-      "description": "Only a greeting such as hi, hoi, hallo, hello, merhaba, with no other request"
+      "description": "Only a greeting such as hi, hoi, hallo, hello, merhaba or good evening, with nothing else asked or ordered"
     },
     {
       "id": "show_products",
-      "do": "tool:filter_products",
-      "description": "Wants to see menu items: names a dish or category, asks what there is, what has meat or is vegan, which drinks, what is popular or what something costs"
+      "do": "marvin",
+      "tools": [
+        "filter_products"
+      ],
+      "description": "Wants to see or know about menu items before choosing: asks for the menu, a category (sides, drinks, bowls), items that fit a wish (with chicken, vegan, spicy, cheap, popular), or what a named item is, contains or costs. Not when they already say they want it"
     },
     {
       "id": "order",
-      "do": "order",
-      "description": "Wants to order or add items, or answers a question about an item being ordered (size, base, which one)"
+      "do": "marvin",
+      "tools": [
+        "add_to_order",
+        "change_logistics"
+      ],
+      "description": "Wants items put in the basket: names items to have (I'll take, 2x, one more, also a drink), says yes to items Marvin just offered, or answers Marvin's question about an item being ordered (which size, base, sauce or which one)"
     },
     {
       "id": "remove",
-      "do": "tool:remove_from_order",
-      "description": "Wants to take items out of the basket or order fewer"
+      "do": "marvin",
+      "tools": [
+        "get_cart",
+        "remove_from_order"
+      ],
+      "description": "Wants items taken out of the basket or fewer of them: remove, delete, cancel the salad, only one instead of two"
     },
     {
       "id": "view_cart",
       "do": "tool:get_cart",
-      "description": "Wants to see what is in the basket"
+      "description": "Asks what is in the basket now or what the total is, without changing it"
     },
     {
       "id": "checkout",
       "do": "tool:checkout_order",
-      "description": "Wants to finish the order and pay"
+      "description": "Is done choosing and wants to finish and pay: checkout, that's all, pay, send the link"
     },
     {
       "id": "logistics",
       "do": "tool:change_logistics",
-      "description": "Chooses pickup or delivery, or a pickup or delivery time"
+      "tools": [
+        "change_logistics"
+      ],
+      "description": "Says whether they pick up or want delivery, or when they want the order, without ordering items in the same message"
     },
     {
       "id": "track_order",
       "do": "tool:track_order",
-      "description": "Asks where an order that is already placed is, or when it arrives"
+      "description": "Asks about an order that is already placed and paid: where it is, when it arrives, its status"
     },
     {
       "id": "reorder",
@@ -65,28 +79,28 @@
     {
       "id": "language_change",
       "do": "language",
-      "description": "Asks the assistant to speak another language, or taps a language button"
+      "description": "Asks Marvin to speak another language, or taps a language button"
     },
     {
       "id": "faq",
       "do": "faq",
-      "description": "Asks a question about the shop or the food that is not about choosing items: opening hours, locations, delivery times, allergens, halal, nutrition, payment"
+      "description": "Asks about the shop rather than about menu items: opening hours, whether it is open now, locations and addresses, delivery area, payment methods, the shop's story or how it works, or its food in general (halal, organic, where ingredients come from)"
     },
     {
       "id": "handoff",
       "do": "handoff",
-      "description": "Wants something only staff can do: refunds, money back, discounts, price corrections, complaints about an order",
+      "description": "Wants something only staff can do: money back, a refund, a discount, a price correction, or complains about an order they already received",
       "instructions": "Apologise once and show understanding. Say you cannot change prices or send money yourself, and give them the team contacts from the facts. Do not argue about the price and do not promise that someone will contact them."
     },
     {
       "id": "no_action",
-      "do": "marvin",
-      "description": "Nothing to do: thanks, okay, browsing, saying they are busy, apologising"
+      "do": "reply",
+      "description": "Needs nothing done: says thanks, ok, great or bye, says they will think about it or are busy, or only reacts with an emoji"
     },
     {
       "id": "unclear",
-      "do": "marvin",
-      "description": "Cannot tell what the shopper wants, or which of several offered options they mean"
+      "do": "fallback",
+      "description": "Cannot be understood, or it cannot be told what the shopper wants even with the conversation"
     }
   ],
   "faq": [
@@ -99,12 +113,14 @@
       "id": "locations",
       "match": "Where the shops are, which shop is nearby, addresses",
       "answer_from": "stores"
+    },
+    {
+      "id": "about_shop",
+      "match": "Questions about the shop itself: its story, team, way of working, or its food in general such as halal, organic or where ingredients come from. Not opening hours or locations",
+      "do": "tool:shop_background",
+      "instructions": "Answer in 1 to 3 short sentences in your own words, only from the page text in the result. Don't paste it and don't send a link. If it doesn't answer the question, or the result is an error, say you don't have that information."
     }
   ],
-  "ordering": {
-    "aliases": {},
-    "multi_item": "ask_one_by_one"
-  },
   "handoff": {
     "answer": "handoff.answer"
   },

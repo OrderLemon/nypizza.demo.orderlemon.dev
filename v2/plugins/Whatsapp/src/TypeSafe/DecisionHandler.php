@@ -14,19 +14,24 @@ use Pmsrapi\V2\Support\Logger;
 
 /**
  * Turns TypeSafe's Decision into the reply, in the shape the controller sends
- * (buttons, links and tracking exactly as before). Always returns a reply;
- * Marvin never decides or runs tools on his own here:
+ * (buttons, links and tracking exactly as before). TypeSafe decides what to
+ * do; nothing else ever does:
  *
- *   acted        code acted on the decision, Marvin worded the result (writer)
- *   safe         code could not act (TypeSafe unsure, unclear, nothing to do,
- *                or a case not handled yet): Marvin, without tools or menu,
- *                asks one clarifying question, replies kindly, or says he
- *                cannot help with this here and gives the team contacts
- *   unavailable  TypeSafe failed: the fixed, translated "can't help right now"
- *   no_text      a message without text (photo, sticker)
+ *   acted         code ran the tool(s) for the decision, Marvin worded the
+ *                 result (writer prompt, no tools)
+ *   marvin_tools  the decision needs details only Marvin reads from the
+ *                 message (which items, how many, an exact time): Marvin with
+ *                 the full menu and ONLY the branch's tools ("tools" in the flow)
+ *   fallback      TypeSafe failed or was not sure, the branch is "unclear", or
+ *                 there was nothing to run: the fixed, translated fallback
+ *                 reply, no AI call, and a log line saying why
+ *   no_text       a message without text (photo, sticker)
  *
- * Handled:
- *   tool:<name>  tools that need no input: Marvin replies from their result
+ * By the branch's "do":
+ *   tool:<name>  code runs the tool; tool:change_logistics only for "as soon
+ *                as possible", otherwise Marvin with the branch's tools
+ *   marvin       Marvin with only the branch's tools (order, remove, show products)
+ *   reply        nothing to do: Marvin writes one kind line, no tools
  *   language     detect_language with the requested language
  *   faq          by the FAQ entry's type:
  *                  answer       the approved text, sent as is when it exists in
@@ -36,23 +41,11 @@ use Pmsrapi\V2\Support\Logger;
  *                  do           the tool runs, Marvin replies from its result
  *   handoff      Marvin, with the branch instructions, the handoff text and the
  *                support contacts
- *   order        add_to_order with the menu item, options and quantity TypeSafe
- *                read (OrderSlots); several items ("a salad and 2 nachos", or
- *                "yes" to a list): add_to_order per item with its own quantity
- *                (DecisionService::orderedItems()); still unclear: safe reply
- *   tool:change_logistics
- *                pickup or delivery "as soon as possible"; a later time: Marvin
- *   tool:filter_products
- *                one clear menu item; "something with chicken": the matching
- *                items (DecisionService::matchingProducts()); "show me the
- *                menu": the categories, with the menu button
- *   tool:remove_from_order
- *                every basket line TypeSafe says is to be taken out, whole or
- *                partly; none clear: safe reply asking which
+ *   fallback     the fallback reply
  */
 final class DecisionHandler
 {
-    /** Tools TypeSafe can run without any input from the message. */
+    /** Tools code runs without any input from the message. */
     private const array NO_INPUT_TOOLS = [
         MarvinTool::GreetWithUsual,
         MarvinTool::TrackOrder,
@@ -73,15 +66,16 @@ final class DecisionHandler
     /** Facts handed to Marvin are cut at this length; enough for a branch list. */
     private const int FACTS_MAX = 8000;
 
-    /** How the last reply came about: acted, safe, unavailable or no_text. */
+    /** How the last reply came about: acted, marvin_tools, fallback or no_text. */
     private string $outcome = '';
+
+    /** Why the last reply was the fallback, or null. */
+    private ?string $fallbackReason = null;
 
     public function __construct(
         private readonly Marvin $marvin,
         private readonly FlowLoader $flows,
         private readonly OrderSlots $slots,
-        private readonly DecisionService $decisions,
-        private readonly MenuDigest $menu,
         private readonly JsonService $json,
         private readonly ShopService $shops,
         private readonly Config $config,
@@ -94,39 +88,56 @@ final class DecisionHandler
      */
     public function reply(Decision $decision, array $conversation, ?string $clientName, string $phone, ?string $language): array
     {
-        if (!$decision->ok) {
-            $this->logger->warning('typesafe: unavailable, fixed reply', ['reason' => $decision->fallbackReason]);
-            $this->outcome = 'unavailable';
+        $language = $language !== null && $language !== '' ? $language : $this->flows->forShop()->defaultLanguage();
 
-            return $this->marvin->unavailable($language);
+        if ($decision->cannotAct()) {
+            return $this->fallback($decision, (string) $decision->reason(), $conversation, $language);
         }
 
-        $language = $language !== null && $language !== '' ? $language : $this->flows->forShop()->defaultLanguage();
         // Run these calls, Marvin only words the result (short prompt, no tools).
         $reply = fn(array $calls, string $note): array
             => $this->marvin->replyWith($conversation, $clientName, $phone, $language, $calls, $note);
-        // Nothing was done: Marvin, without tools, asks, replies kindly or says he cannot help.
-        $safe = function (string $why, string $facts = '', string $instructions = '') use ($decision, $reply): array {
-            $this->outcome = 'safe';
-            $this->logger->info('typesafe: safe reply', ['branch' => $decision->branch, 'why' => $why]);
+        // Marvin fills in the details, with only the branch's tools.
+        $withTools = function () use ($decision, $conversation, $clientName, $phone, $language): ?array {
+            if ($decision->tools === []) {
+                return null;
+            }
+            $this->outcome = 'marvin_tools';
+            $this->logger->info('typesafe: Marvin with tools', ['branch' => $decision->branch, 'tools' => $decision->tools]);
 
-            return $reply([], $this->safeNote($decision, $why, $facts, $instructions));
+            return $this->marvin->replyWithTools($conversation, $clientName, $phone, $language, $decision->tools, $this->toolsNote($decision));
         };
 
-        if ($decision->useMarvin()) {
-            return $safe((string) $decision->reason());
-        }
-
         $this->outcome = 'acted';
+        $this->fallbackReason = null;
         $result = match ($decision->do) {
             'faq'      => $this->faq($decision, $language, $reply),
             'handoff'  => $this->handoff($decision, $language, $reply),
             'language' => $this->language($decision, $reply),
-            'order'    => $this->order($decision, $reply, $safe),
-            default    => $this->tool($decision, $reply, $safe),
+            'marvin'   => $withTools(),
+            'reply'    => $reply([], $this->note($decision, instructions: $this->join(
+                'Nothing needs doing: reply briefly and kindly in one line, without asking anything new.',
+                $decision->instructions,
+            ))),
+            'fallback' => null,
+            default    => $this->tool($decision, $reply, $withTools),
         };
 
-        return $result ?? $safe('not_handled');
+        if ($result === null) {
+            return $this->fallback($decision, $decision->do === 'fallback' ? 'unclear' : 'not_handled', $conversation, $language);
+        }
+        // Marvin failed (prompt missing, API error): he already returned the fallback reply.
+        if (($result['type'] ?? null) === Marvin::FALLBACK_SOURCE) {
+            $this->outcome = 'fallback';
+            $this->fallbackReason = 'marvin_failed';
+            $this->logger->warning('typesafe: fallback', [
+                'why'     => 'marvin_failed',
+                'message' => $this->latestMessage($conversation),
+                'branch'  => $decision->branch,
+            ]);
+        }
+
+        return $result;
     }
 
     /**
@@ -139,60 +150,60 @@ final class DecisionHandler
     public function noText(array $conversation, ?string $clientName, string $phone, ?string $language): array
     {
         $this->outcome = 'no_text';
+        $this->fallbackReason = null;
 
         return $this->marvin->replyWith($conversation, $clientName, $phone, $language, [],
             'The shopper sent something without text, like a photo or a sticker. Say in one line that you can read text and voice messages, and ask what they would like.');
     }
 
-    /** acted, safe, unavailable or no_text, for the webhook response. */
+    /** acted, marvin_tools, fallback or no_text, for the webhook response. */
     public function outcome(): string
     {
         return $this->outcome;
     }
 
+    /** Why the last reply was the fallback, for the webhook response; null otherwise. */
+    public function fallbackReason(): ?string
+    {
+        return $this->fallbackReason;
+    }
+
     // ---------------------------------------------------------------- branches
 
-    /** @param callable(list<array{0: string, 1: array<string,mixed>}>, string): array<string,mixed> $reply */
-    /** @param callable(string, string=, string=): array<string,mixed> $safe */
-    private function tool(Decision $decision, callable $reply, callable $safe): ?array
+    /**
+     * The fixed fallback reply, logged with the message and why.
+     *
+     * @param array<string, mixed> $conversation
+     * @return array<string, mixed>
+     */
+    private function fallback(Decision $decision, string $why, array $conversation, string $language): array
+    {
+        $this->outcome = 'fallback';
+        $this->fallbackReason = $why;
+
+        $this->logger->warning('typesafe: fallback', [
+            'why'     => $why,
+            'message' => $this->latestMessage($conversation),
+            'branch'  => $decision->branch,
+            'top'     => $decision->topBranches(),
+        ]);
+
+        return $this->marvin->fallbackReply($language);
+    }
+
+    /**
+     * @param callable(list<array{0: string, 1: array<string,mixed>}>, string): array<string,mixed> $reply
+     * @param callable(): ?array<string,mixed>                                                     $withTools
+     */
+    private function tool(Decision $decision, callable $reply, callable $withTools): ?array
     {
         $tool = MarvinTool::tryFrom((string) $decision->tool());
 
-        if ($tool === MarvinTool::RemoveFromOrder && ($lines = $this->slots->removeLines($decision)) !== []) {
-            $this->logger->info('typesafe: removing', ['lines' => $lines]);
-
-            return $reply(
-                array_map(static fn(array $input): array => [MarvinTool::RemoveFromOrder->value, $input], $lines),
-                $this->note($decision, ranTool: true, instructions: $this->join(
-                    count($lines) > 1 ? 'Several lines were changed, one result each. Say what was removed in one short list. Give the total from the last result.' : null,
-                    $decision->instructions,
-                )),
-            );
-        }
-
-        if ($tool === MarvinTool::RemoveFromOrder) {
-            $this->logger->info('typesafe: remove without a clear basket line');
-
-            $basket = (string) json_encode(array_map(
-                static fn(array $l): array => ['item' => $l['item'] ?? '', 'quantity' => $l['quantity'] ?? 1, 'options' => $l['options'] ?? []],
-                (array) ($decision->state['basket'] ?? []),
-            ), JSON_UNESCAPED_UNICODE);
-
-            return $safe('remove_unclear_line', "The basket: {$basket}", 'They want to take something out of the basket, but it is not clear which item: ask which one, naming the items. If the basket is empty, say so.');
-        }
-
-        if ($tool === MarvinTool::FilterProducts && $this->slots->filterProducts($decision) === null) {
-            return $this->products($decision, $reply, $safe);
-        }
-
-        $input = match ($tool) {
-            MarvinTool::ChangeLogistics => $this->slots->changeLogistics($decision),
-            MarvinTool::FilterProducts  => $this->slots->filterProducts($decision),
-            default                     => false,
-        };
-        if ($input !== false) {
+        // Pickup or delivery "as soon as possible" is set here; an exact time is read by Marvin.
+        if ($tool === MarvinTool::ChangeLogistics) {
+            $input = $this->slots->changeLogistics($decision);
             if ($input === null) {
-                return null;
+                return $withTools();
             }
             $this->logger->info('typesafe: running tool', ['branch' => $decision->branch, 'tool' => $tool->value, 'input' => $input]);
 
@@ -200,7 +211,7 @@ final class DecisionHandler
         }
 
         if ($tool === null || !in_array($tool, self::NO_INPUT_TOOLS, true)) {
-            return null;
+            return $withTools();
         }
 
         $this->logger->info('typesafe: running tool', ['branch' => $decision->branch, 'tool' => $tool->value]);
@@ -208,120 +219,12 @@ final class DecisionHandler
         return $reply([[$tool->value, []]], $this->note($decision, ranTool: true, instructions: $decision->instructions));
     }
 
-    /**
-     * Showing products when TypeSafe did not pick one item: the whole menu as
-     * categories, or the items that match a description.
-     *
-     * @param callable(list<array{0: string, 1: array<string,mixed>}>, string): array<string,mixed> $reply
-     * @param callable(string, string=, string=): array<string,mixed> $safe
-     */
-    private function products(Decision $decision, callable $reply, callable $safe): ?array
-    {
-        $confident = $decision->isConfident($decision->productRequestConfidence);
-
-        if ($confident && $decision->productRequest === 'overview') {
-            $overview = $this->menu->categoryOverview();
-            if ($overview !== '') {
-                $this->logger->info('typesafe: menu overview');
-
-                return $reply([], $this->note($decision, facts: "The menu's categories: {$overview}.", instructions: $this->join(
-                    'List these categories in one short message, grouped as given, and ask what they would like to see. Do not list products.',
-                    $decision->instructions,
-                )));
-            }
-        }
-
-        if ($confident && $decision->productRequest === 'matching') {
-            $ids = $this->decisions->matchingProducts($decision);
-            if ($ids !== null && $ids !== []) {
-                $this->logger->info('typesafe: showing matching products', ['product_ids' => $ids]);
-
-                return $reply([[MarvinTool::FilterProducts->value, ['product_ids' => $ids]]], $this->note($decision, ranTool: true, instructions: $this->join(
-                    'Show these products, one per line, with price and a few words, in the order given.',
-                    $decision->instructions,
-                )));
-            }
-            if ($ids === []) {
-                $overview = $this->menu->categoryOverview();
-
-                return $safe('nothing_matching', $overview === '' ? '' : "The menu's categories: {$overview}.",
-                    'They asked to see products, but nothing on the menu matches. Say so in one line and offer the categories to choose from.');
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * One clear menu item: add it with the options and quantity TypeSafe read;
-     * add_to_order itself reports missing choices, deals and closed ordering,
-     * and Marvin words that. Not one clear item: Marvin decides, with what
-     * TypeSafe read as a note.
-     *
-     * @param callable(list<array{0: string, 1: array<string,mixed>}>, string): array<string,mixed> $reply
-     * @param callable(string, string=, string=): array<string,mixed> $safe
-     */
-    private function order(Decision $decision, callable $reply, callable $safe): ?array
-    {
-        $input = $this->slots->addToOrder($decision);
-
-        // Several items in one message: one add_to_order per item, each with its own quantity.
-        if ($input === null && $decision->item === Decision::ITEM_SEVERAL
-            && ($items = $this->decisions->orderedItems($decision)) !== null && $items !== []) {
-            $calls = array_map(
-                static fn(array $i): array => [MarvinTool::AddToOrder->value, ['product_id' => $i['product_id'], 'quantity' => $i['quantity']]],
-                $items,
-            );
-            $logistics = $this->slots->changeLogistics($decision);
-            if ($logistics !== null) {
-                $calls[] = [MarvinTool::ChangeLogistics->value, $logistics];
-            }
-            $this->logger->info('typesafe: adding several items', ['items' => $items]);
-
-            return $reply($calls, $this->note($decision, ranTool: true, instructions: $this->join(
-                'Several items were added, one result each. Say what was added in one short list; for any result that says '
-                . 'needs_options, ask for exactly those choices for that item. Give the total from the last result.',
-                $this->slots->extras($decision, logisticsHandled: $logistics !== null),
-                $decision->instructions,
-            )));
-        }
-
-        if ($input === null) {
-            $read = match ($decision->item) {
-                Decision::ITEM_SEVERAL => 'it fits several menu items or names more than one',
-                default                => 'no item on the menu matches it',
-            };
-            // The items TypeSafe found most likely, so Marvin can ask "which one?".
-            $candidates = array_slice(array_keys(array_filter($decision->itemProbabilities, static fn(float $p): bool => $p >= 0.02)), 0, 5);
-            $facts = $this->menu->facts($candidates);
-
-            return $safe('order_unclear_item', $facts === '' ? '' : "Menu items that may be meant: {$facts}",
-                "They want to order, but it is not clear which menu item: {$read}. "
-                . ($facts === '' ? 'Ask what they would like, or say it is not on the menu.' : 'Ask which of these they mean, with prices; if none fits, say it is not on the menu.'));
-        }
-
-        // "Pickup / delivery as soon as possible" in the same message: set it right after adding.
-        $calls = [[MarvinTool::AddToOrder->value, $input]];
-        $logistics = $this->slots->changeLogistics($decision);
-        if ($logistics !== null) {
-            $calls[] = [MarvinTool::ChangeLogistics->value, $logistics];
-        }
-
-        $this->logger->info('typesafe: adding to order', ['input' => $input, 'logistics' => $logistics]);
-
-        return $reply($calls, $this->note($decision, ranTool: true, instructions: $this->join(
-            'If the result says needs_options, ask for exactly those choices in one short message.',
-            $this->slots->extras($decision, logisticsHandled: $logistics !== null),
-            $decision->instructions,
-        )));
-    }
-
     /** @param callable(list<array{0: string, 1: array<string,mixed>}>, string): array<string,mixed> $reply */
     private function language(Decision $decision, callable $reply): ?array
     {
         $requested = $decision->requestedLanguage;
 
-        // "other" is a language the shop does not list; Marvin handles that one himself.
+        // "other" is a language the shop does not list: the fallback reply.
         if ($requested === null || !in_array($requested, $this->flows->forShop()->languages(), true)
             || !$decision->isConfident($decision->requestedLanguageConfidence)) {
             return null;
@@ -401,6 +304,40 @@ final class DecisionHandler
     // ---------------------------------------------------------------- helpers
 
     /**
+     * What Marvin is told when he fills in the details: what was decided,
+     * which tools to use, and to ask instead of guessing.
+     */
+    private function toolsNote(Decision $decision): string
+    {
+        $mentioned = array_filter([
+            $decision->logistics,
+            $decision->orderTime === null ? null : str_replace('_', ' ', $decision->orderTime),
+        ]);
+
+        return $this->note($decision, instructions: $this->join(
+            'Use ' . implode(' or ', $decision->tools) . ' for this message. Take what goes into the call, such as '
+            . 'which items, how many, which options or what time, from the message and the conversation. If '
+            . 'something you need is not said, ask for exactly that in one short message instead of guessing.',
+            $mentioned !== [] && in_array(MarvinTool::ChangeLogistics->value, $decision->tools, true)
+                ? 'They also mentioned ' . implode(', ', $mentioned) . '; set it with change_logistics once you know both the type and the time.'
+                : null,
+            $decision->instructions,
+        ));
+    }
+
+    /** @param array<string, mixed> $conversation */
+    private function latestMessage(array $conversation): string
+    {
+        foreach (array_reverse((array) ($conversation['data']['messages'] ?? [])) as $entry) {
+            if (is_array($entry) && ($entry['direction'] ?? 'in') === 'in' && is_string($entry['message'] ?? null)) {
+                return mb_substr(trim($entry['message']), 0, 300);
+            }
+        }
+
+        return '';
+    }
+
+    /**
      * What Marvin is told along with the decision. Kept free of round brackets:
      * it is wrapped in a "(SYSTEM NOTE, …)" that is cut at the first ")".
      */
@@ -418,49 +355,6 @@ final class DecisionHandler
         }
         if ($instructions !== null && trim($instructions) !== '') {
             $note .= ' ' . trim($instructions);
-        }
-
-        return str_replace(['(', ')'], ['[', ']'], $note);
-    }
-
-    /**
-     * The note for a safe reply: nothing was done, Marvin may not do anything
-     * himself, and he either replies kindly, asks one clarifying question, or
-     * says he cannot help with this here and gives the team contacts.
-     */
-    private function safeNote(Decision $decision, string $why, string $facts, string $instructions): string
-    {
-        $note = 'Nothing was done for the shopper\'s latest message. You cannot change the basket, place or look up '
-            . 'orders, or give any information that is not in this note or the earlier conversation. Never say that you '
-            . 'can, will or did do something; ask or explain instead.';
-
-        if ($decision->ok && $decision->branch === 'no_action' && $instructions === '') {
-            return $note . ' Nothing needs doing: reply briefly and kindly in one line, without asking anything new.';
-        }
-
-        if ($instructions !== '') {
-            $note .= ' ' . $instructions;
-        } else {
-            // The two most likely readings, so the question can offer them.
-            $readings = [];
-            $probabilities = $decision->branchProbabilities;
-            arsort($probabilities);
-            foreach (array_keys($probabilities) as $id) {
-                $branch = $this->flows->forShop()->branch((string) $id);
-                if ($branch !== null && ($branch['do'] ?? '') !== 'marvin') {
-                    $readings[] = $branch['description'];
-                }
-                if (count($readings) === 2) {
-                    break;
-                }
-            }
-            $note .= ' If it is unclear what they want, ask one short question to find out'
-                . ($readings !== [] ? ', for example whether they mean: ' . implode(', or: ', $readings) : '') . '.'
-                . ' If it is something you cannot help with in this chat, say so plainly in one line and give the team contacts: '
-                . $this->fill('{{SUPPORT_1}} or {{SUPPORT_2}}') . '.';
-        }
-        if ($facts !== '') {
-            $note .= ' Facts: ' . $facts;
         }
 
         return str_replace(['(', ')'], ['[', ']'], $note);

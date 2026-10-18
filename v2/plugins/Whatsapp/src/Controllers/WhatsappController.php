@@ -154,9 +154,10 @@ final class WhatsappController
             'message_type' => $this->messagePayload["message_type"],
             'reply' => $reply,
             'typesafe' => $this->typesafe === null ? null : $this->typesafe->summary() + [
-                'use_marvin' => $this->typesafe->useMarvin(),
                 'do' => $this->typesafe->do,
+                'tools' => $this->typesafe->tools,
                 'outcome' => $this->typesafeHandler->outcome(),
+                'fallback_reason' => $this->typesafeHandler->fallbackReason(),
             ],
         ], static fn(mixed $v): bool => $v !== null));
     }
@@ -178,10 +179,10 @@ final class WhatsappController
 
         $conversation = $this->transcripts->load($this->messagePayload["phone_number"]);
 
-        // TypeSafe decides; DecisionHandler always answers: code acts and Marvin
-        // words the result, or (nothing it can act on) Marvin without tools asks,
-        // replies kindly or says he cannot help, or (TypeSafe failed) a fixed
-        // "can't help right now". Marvin never decides or runs tools on his own.
+        // TypeSafe decides; DecisionHandler always answers: code runs the tool and
+        // Marvin words the result, or Marvin fills in the details with only the
+        // tools the decision allows, or (TypeSafe unsure or down) the fixed
+        // fallback reply. Marvin never chooses the action himself.
         $reply = $this->typesafe === null
             ? $this->typesafeHandler->noText(
                 $conversation,

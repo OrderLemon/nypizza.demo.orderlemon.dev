@@ -111,7 +111,6 @@ final class WhatsappPlugin extends AbstractPlugin
 
         $registrar->singleton(MenuDigest::class, static fn(Container $c): MenuDigest => new MenuDigest(
             $c->get(MenuService::class),
-            $c->get(JsonService::class),
         ));
 
         $registrar->singleton(StateBuilder::class, static fn(Container $c): StateBuilder => new StateBuilder(
@@ -124,8 +123,8 @@ final class WhatsappPlugin extends AbstractPlugin
         $registrar->singleton(DecisionService::class, static fn(Container $c): DecisionService => new DecisionService(
             $c->get(TypeSafeClient::class),
             $c->get(FlowLoader::class),
-            $c->get(MenuDigest::class),
             $c->get(StateBuilder::class),
+            $c->get(ShopBackground::class),
             $c->get(Logger::class),
         ));
 
@@ -161,16 +160,12 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(Logger::class),
         ));
 
-        $registrar->singleton(OrderSlots::class, static fn(Container $c): OrderSlots => new OrderSlots(
-            $c->get(MenuService::class),
-        ));
+        $registrar->singleton(OrderSlots::class, static fn(): OrderSlots => new OrderSlots());
 
         $registrar->singleton(DecisionHandler::class, static fn(Container $c): DecisionHandler => new DecisionHandler(
             $c->get(Marvin::class),
             $c->get(FlowLoader::class),
             $c->get(OrderSlots::class),
-            $c->get(DecisionService::class),
-            $c->get(MenuDigest::class),
             $c->get(JsonService::class),
             $c->get(ShopService::class),
             $c->get(Config::class),

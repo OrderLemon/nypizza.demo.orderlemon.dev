@@ -81,17 +81,6 @@ final readonly class Flow
         return $this->byId($this->data['faq'], $id);
     }
 
-    /** @return array<string, list<string>> product name => other names shoppers use */
-    public function aliases(): array
-    {
-        return $this->data['ordering']['aliases'] ?? [];
-    }
-
-    public function multiItem(): string
-    {
-        return (string) ($this->data['ordering']['multi_item'] ?? 'ask_one_by_one');
-    }
-
     /** @return array<string, mixed> */
     public function handoff(): array
     {

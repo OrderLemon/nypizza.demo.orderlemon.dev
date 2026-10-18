@@ -21,7 +21,6 @@ use Pmsrapi\V2\Support\Logger;
  *   router, faq                   merged by "id": an existing id is updated
  *                                 field by field, a new id is added, and
  *                                 "disabled": true removes a shared entry
- *   ordering.aliases              merged by product name
  *   texts                         merged by key, then by language
  *
  * A shop file that is broken (bad JSON, unknown keys, failed validation) never
@@ -31,10 +30,10 @@ use Pmsrapi\V2\Support\Logger;
  */
 final class FlowLoader
 {
-    private const array TOP_LEVEL_KEYS = ['settings', 'languages', 'router', 'faq', 'ordering', 'handoff', 'texts'];
-    private const array DO_ACTIONS = ['order', 'faq', 'language', 'handoff', 'marvin'];
+    private const array TOP_LEVEL_KEYS = ['settings', 'languages', 'router', 'faq', 'handoff', 'texts'];
+    /** marvin: Marvin with only the branch's tools; reply: one line, no tools; fallback: the fixed reply. */
+    private const array DO_ACTIONS = ['faq', 'language', 'handoff', 'marvin', 'reply', 'fallback'];
     private const array ANSWER_SOURCES = ['stores'];
-    private const array MULTI_ITEM = ['ask_one_by_one'];
 
     /** The ways an FAQ entry can be answered; an entry has exactly one. */
     private const array ANSWER_KEYS = ['answer', 'facts', 'do', 'answer_from'];
@@ -129,13 +128,6 @@ final class FlowLoader
             if (is_array($shop[$key] ?? null)) {
                 $merged[$key] = $this->mergeById($default[$key] ?? [], $shop[$key]);
             }
-        }
-        if (is_array($shop['ordering'] ?? null)) {
-            $merged['ordering'] = array_merge($default['ordering'] ?? [], $shop['ordering']);
-            $merged['ordering']['aliases'] = array_merge(
-                $default['ordering']['aliases'] ?? [],
-                is_array($shop['ordering']['aliases'] ?? null) ? $shop['ordering']['aliases'] : [],
-            );
         }
         if (is_array($shop['texts'] ?? null)) {
             foreach ($shop['texts'] as $textKey => $byLanguage) {
@@ -244,6 +236,7 @@ final class FlowLoader
                 if (!$this->isValidDo($branch['do'] ?? null)) {
                     $errors[] = "router '{$branch['id']}': unknown do '" . json_encode($branch['do'] ?? null) . "'";
                 }
+                $this->validateTools($branch, $errors);
             }
         }
 
@@ -255,14 +248,6 @@ final class FlowLoader
             foreach ($faq as $entry) {
                 $this->validateFaqAnswer($entry, $flow, $errors);
             }
-        }
-
-        $aliases = $flow['ordering']['aliases'] ?? [];
-        if (!is_array($aliases) || array_filter($aliases, static fn($a) => !is_array($a) || !array_is_list($a)) !== []) {
-            $errors[] = 'ordering.aliases must map product names to lists of names';
-        }
-        if (!in_array($flow['ordering']['multi_item'] ?? 'ask_one_by_one', self::MULTI_ITEM, true)) {
-            $errors[] = 'ordering.multi_item must be one of: ' . implode(', ', self::MULTI_ITEM);
         }
 
         if (isset($flow['handoff']['answer'])) {
@@ -362,6 +347,37 @@ final class FlowLoader
             $errors[] = "{$where}: text '{$key}' does not exist in texts";
         } elseif (!isset($texts[$default]) && !isset($texts['en'])) {
             $errors[] = "{$where}: text '{$key}' has no '{$default}' or 'en' version";
+        }
+    }
+
+    /**
+     * "tools": the tools Marvin may call for this branch. Required for
+     * do "marvin"; on a tool:<name> branch they are used when code cannot
+     * fill the input itself (e.g. a pickup time other than as soon as possible).
+     *
+     * @param array<string, mixed> $branch
+     * @param list<string>         $errors
+     */
+    private function validateTools(array $branch, array &$errors): void
+    {
+        $id = (string) ($branch['id'] ?? '');
+        $tools = $branch['tools'] ?? null;
+        if ($tools === null) {
+            if (($branch['do'] ?? null) === 'marvin') {
+                $errors[] = "router '{$id}': do marvin needs a list of tools";
+            }
+
+            return;
+        }
+        if (!is_array($tools) || !array_is_list($tools) || $tools === []) {
+            $errors[] = "router '{$id}': tools must be a non-empty list of tool names";
+
+            return;
+        }
+        foreach ($tools as $tool) {
+            if (!is_string($tool) || !$this->isValidDo("tool:{$tool}")) {
+                $errors[] = "router '{$id}': unknown tool " . json_encode($tool);
+            }
         }
     }
 

@@ -26,8 +26,16 @@ use Throwable;
  *
  *   "marvin": {
  *     "config":  "/home/marvin.json",     <- menu + tunables, hot-editable
- *     "prompts": "/home/marvin.v1.txt"    <- the prompt text
+ *     "prompts": {
+ *       "writer": "/home/…/marvin_writer.v1.txt",  <- words a reply, no tools, no menu
+ *       "menu":   "/home/…/marvin_menu.v1.txt"     <- items with the full menu and the branch's tools
+ *     }
  *   }
+ *
+ * TypeSafe decides what to do; Marvin never does. He either words the result
+ * of what code ran (replyWith, writer prompt) or fills in the details with
+ * only the tools the decision allows (replyWithTools, menu prompt). A missing
+ * or broken prompt, like any other failure, gives the fallback reply.
  *
  * Both live outside the code tree, so the prompt and the menu can change
  * without a redeploy. /home/marvin.json is either a bare menu array or an
@@ -106,7 +114,7 @@ final class Marvin
     /** History turns the writer gets; enough for "yes" and "that one" to make sense. */
     private const int WRITER_HISTORY = 8;
 
-    /** Writer prompt for this shop, placeholders filled; '' when there is no writer prompt file. */
+    /** Writer prompt, placeholders filled. */
     private ?string $writerText = null;
 
     /** @var array<string,mixed>|null */
@@ -126,30 +134,12 @@ final class Marvin
     // ---------------------------------------------------------------- replying
 
     /**
-     * Answer the latest message in this conversation.
-     *
-     * The inbound message is expected to already be the last entry in
-     * $conversation — the controller logs it via ChatTranscriptService before this.
-     *
      * The loop's intermediate turns are deliberately NOT written back to
      * <phone>.json. That log is the shopper-visible transcript, and a persisted
      * tool_use block that lost its matching tool_result is a hard API error on
-     * the next message.
-     *
-     * @param array<string,mixed> $conversation decoded <phone>.json
-     * @param string|null $phone from the gateway envelope. Pass it explicitly:
-     *                    it is the only identity the tools can trust.
-     * @param string|null $language ISO 639-1 code the shopper is detected to be
-     *                    writing in (see LanguageHelper). Only ever picks which
-     *                    translated string fallback() returns — it is NOT sent
-     *                    to Claude, so it cannot affect systemBlocks() (which
-     *                    must stay byte-identical across shoppers for the
-     *                    prompt cache to warm) or the messages array.
+     * the next message. $phone comes from the gateway envelope: it is the only
+     * identity the tools can trust.
      */
-    public function reply(array $conversation, ?string $clientName = "", ?string $phone = null, ?string $language = null): array
-    {
-        return $this->respond($conversation, $clientName, $phone, $language, null);
-    }
 
     /**
      * Word a reply for a decision TypeSafe already made (writer mode).
@@ -160,9 +150,6 @@ final class Marvin
      * $note go to Marvin as one internal note on the shopper's message, with
      * the short writer prompt (marvin.prompts.writer) and no tools: he only
      * words the reply.
-     *
-     * Without a writer prompt file, the full prompt is used and the calls are
-     * put in the conversation as his own tool calls, as reply() would.
      *
      * @param list<array{0: string, 1: array<string,mixed>}> $calls tool name and input, run in order
      */
@@ -178,12 +165,33 @@ final class Marvin
     }
 
     /**
+     * Reply to a decision TypeSafe made that needs details only Marvin can
+     * read from the message: which items, how many, an exact time.
+     *
+     * Full prompt and menu, but only $tools (e.g. add_to_order for an order):
+     * he chooses what goes in the call, never which action it is. A call to
+     * any other tool is blocked and logged. $note tells him what was decided.
+     *
+     * @param list<string> $tools tool names he may call
+     */
+    public function replyWithTools(
+        array $conversation,
+        ?string $clientName,
+        ?string $phone,
+        ?string $language,
+        array $tools,
+        ?string $note = null,
+    ): array {
+        return $this->respond($conversation, $clientName, $phone, $language, ['mode' => 'tools', 'tools' => $tools, 'calls' => [], 'note' => $note]);
+    }
+
+    /**
      * The fixed "I can't help right now" reply (marvin_fallback, translated,
-     * with the support contacts), for when TypeSafe is unavailable. No AI call.
+     * with the support contacts). No AI call.
      *
      * @return array{type: string, message: string}
      */
-    public function unavailable(?string $language): array
+    public function fallbackReply(?string $language): array
     {
         $this->replyLanguage = ($language !== null && $language !== '') ? $language : 'en';
 
@@ -191,10 +199,10 @@ final class Marvin
     }
 
     /**
-     * @param array{mode: string, calls: list<array{0: string, 1: array<string,mixed>}>, note: ?string}|null $seed
+     * @param array{mode: string, calls: list<array{0: string, 1: array<string,mixed>}>, note: ?string, tools?: list<string>} $seed
      * @return array<string,mixed>
      */
-    private function respond(array $conversation, ?string $clientName, ?string $phone, ?string $language, ?array $seed): array
+    private function respond(array $conversation, ?string $clientName, ?string $phone, ?string $language, array $seed): array
     {
         $this->updateShopInfo();
 
@@ -221,13 +229,14 @@ final class Marvin
                 throw new ApiException('No phone number in conversation, cannot run tools.');
             }
 
-            $writer = ($seed['mode'] ?? null) === 'writer' ? $this->writerSystemBlocks() : null;
-            $model  = null;
+            $model   = null;
+            // Tools mode: only these tools; anything else he calls is blocked.
+            $allowed = $seed['mode'] === 'tools' ? $seed['tools'] ?? [] : null;
 
-            if ($writer !== null) {
+            if ($seed['mode'] === 'writer') {
                 // Writer mode: decided and done; Marvin only words the reply.
                 // Short prompt, recent turns, results in a note, no tools.
-                $system   = $writer;
+                $system   = $this->writerSystemBlocks();
                 $tools    = [];
                 $model    = $this->config->secret('marvin.writer_model', null);
                 $messages = $this->noteOnShopper(
@@ -236,17 +245,19 @@ final class Marvin
                 );
                 $this->logger->info('marvin: writer reply', [
                     'calls'        => array_column($seed['calls'], 0),
-                    'prompt_chars' => mb_strlen($writer[0]['text']),
+                    'prompt_chars' => mb_strlen($system[0]['text']),
                     'model'        => $model,
                 ]);
+            } elseif ($allowed !== null) {
+                $system   = $this->systemBlocks();
+                $tools    = array_values(array_filter(
+                    $this->tools->definitions(),
+                    static fn(array $d): bool => in_array($d['name'] ?? '', $allowed, true),
+                ));
+                $messages = $this->noteOnShopper($messages, (string) ($seed['note'] ?? ''));
+                $this->logger->info('marvin: reply with tools', ['tools' => $allowed]);
             } else {
-                $system = $this->systemBlocks();
-                // A writer reply with nothing to run (a safe reply) never gets tools,
-                // not even on the full prompt when there is no writer prompt file.
-                $tools  = ($seed['mode'] ?? null) === 'writer' && $seed['calls'] === [] ? [] : $this->tools->definitions();
-                if ($seed !== null) {
-                    $messages = $this->seed($messages, $seed, $phone);
-                }
+                throw new ApiException("Unknown reply mode: {$seed['mode']}");
             }
 
             // Text Marvin writes in a turn that also calls a tool (e.g. a
@@ -263,6 +274,10 @@ final class Marvin
                 $body = $this->client->messages($messages, $system, $tools, $lastTurn && $tools !== [] ? ['type' => 'none'] : null, is_string($model) ? $model : null);
 
                 if (($body['stop_reason'] ?? null) !== 'tool_use') {
+                    if ($allowed !== null && $turn === 1) {
+                        // Allowed: he may need to ask ("which pizza?"). Logged so it shows how often.
+                        $this->logger->info('marvin: no tool called', ['tools' => $allowed]);
+                    }
                     // The only exit that carries an answer. $this->tracking was
                     // set on the previous pass, if a tool produced one.
                     return $this->replyFrom($body, implode("\n\n", $earlier));
@@ -292,6 +307,16 @@ final class Marvin
                             'tool'  => $block['name'] ?? null,
                             'input' => $block['input'] ?? null,
                         ]);
+                        if ($allowed !== null && !in_array($block['name'] ?? '', $allowed, true)) {
+                            $this->logger->warning('marvin: tool blocked', ['tool' => $block['name'] ?? null, 'allowed' => $allowed]);
+                            $results[] = [
+                                'type'        => 'tool_result',
+                                'tool_use_id' => $block['id'] ?? '',
+                                'content'     => 'Not available for this message. Do not try it again.',
+                                'is_error'    => true,
+                            ];
+                            continue;
+                        }
                         $results[] = $this->tools->run($block, $phone);
                     }
                 }
@@ -448,7 +473,7 @@ final class Marvin
         return $cacheControl;
     }
 
-    /** The prompt text with the menu substituted where $jsondominos_menu was. */
+    /** The menu prompt (marvin.prompts.menu) with the menu and shop data filled in. */
     public function systemText(): string
     {
         if ($this->systemText !== null) {
@@ -457,9 +482,9 @@ final class Marvin
 
         $path = $this->promptPath();
 
-        $template = @file_get_contents($path);
+        $template = is_readable($path) ? file_get_contents($path) : false;
         if ($template === false) {
-            throw new ApiException("Cannot read marvin.prompts file: {$path}");
+            throw new ApiException("Cannot read marvin.prompts.menu file: {$path}");
         }
 
         if (!str_contains($template, '{{MENU_JSON}}')) {
@@ -470,19 +495,10 @@ final class Marvin
         }
 
         //Marvin prompt requries shop name and address 
-        if(!isset($this->shopInfo["stores"]) || empty($this->shopInfo["stores"])){
-            throw new ApiException("No stores found in shop info to build prompt!");
-        }
-
-        //Marvin prompt requries shop name and address 
         if(!isset($this->shopInfo["name"]) || trim($this->shopInfo["name"]) === ""){
             throw new ApiException("Shop name required to build prompt!");
         }
 
-        if(!isset($this->shopInfo["street"]) || trim($this->shopInfo["street"]) === ""){
-            throw new ApiException("Shop address required to build prompt!");
-        }
-        
         [$pickupHours, $deliveyHours] = $this->shopService->getLogisticHours();
 
 
@@ -490,14 +506,6 @@ final class Marvin
 
         [$support1, $support2] = array_values($supps);
 
-        //build the address
-        // $address = isset($this->shopInfo["country"]) ? $this->shopInfo["country"] . ", " : " ";
-        // $address .= isset($this->shopInfo["city"]) ? $this->shopInfo["city"] . ", " : " ";
-        // $address .= $this->shopInfo["street"] ?? " ";
-
-        $locations = json_encode($this->shopInfo["stores"]);
-    
-        
         $this->systemText = str_replace('{{SUPPORT_1}}', ucwords($support1), $template);
         $this->systemText = str_replace('{{SUPPORT_2}}', ucwords($support2), $this->systemText);
 
@@ -514,21 +522,10 @@ final class Marvin
         $this->systemText = str_replace('{{CLIENT_NAME}}', ucwords($this->clientName), $this->systemText);
 
         // company name will be the shop name in the demo version
-        $this->systemText = str_replace('{{COMPANY_NAME}}', strtoupper($this->shopInfo["name"]), $this->systemText);
-
-        $this->systemText = str_replace('{{LOCATIONS}}', strtoupper($locations), $this->systemText);
+        $this->systemText = str_replace('{{COMPANY_NAME}}', $this->shopInfo["name"], $this->systemText);
 
         $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $this->systemText);
 
-
-        if ($this->tools->hasShopBackground()) {
-            $this->systemText .= "\n\nABOUT THE SHOP\n"
-                . "For questions about the shop itself (its history, story, team, way of working or other background not in the menu), "
-                . "call shop_background and answer from what it returns.\n"
-                . "- Answer in 1 to 3 short sentences in the shopper's language, in your own words. Don't paste the text, and don't send a link.\n"
-                . "- If it doesn't answer the question, or the tool fails, say you don't have that information. Never guess.\n"
-                . "- Don't use shop_background for products, prices, orders or opening hours. Those come from the menu, LOCATIONS and your other tools.";
-        }
 
         return $this->systemText;
     }
@@ -540,31 +537,13 @@ final class Marvin
         return basename($this->promptPath(), '.txt');
     }
 
-    /**
-     * Which prompt file this shop uses, first match wins:
-     *
-     *   "marvin": { "prompts": { "shops": { "99": "/path/marvin_pokeperfect.v1.txt" } } }
-     *   shop listed in "wine_shops"  -> marvin.prompts.wine_specialist
-     *   everyone else                -> marvin.prompts.main
-     */
+    /** The menu prompt file: marvin.prompts.menu, one for every shop. */
     private function promptPath(): string
     {
-        if(!defined("shop_id") || !is_numeric(shop_id)){
-            throw new ValidationException(["shop id" => "Shop Id must be a numeric value!"]);
-        }
-
-        $wineShops = $this->config->secret("wine_shops",[]);
-
-        $key = match (true) {
-            $this->config->hasSecret('marvin.prompts.shops.' . shop_id) => 'marvin.prompts.shops.' . shop_id,
-            in_array(shop_id, $wineShops)                                => 'marvin.prompts.wine_specialist',
-            default                                                      => 'marvin.prompts.main',
-        };
-
-        $path = $this->config->secret($key);
+        $path = $this->config->secret('marvin.prompts.menu');
 
         if (!is_string($path) || trim($path) === '') {
-            throw new ApiException("{$key} is not set in the secret config. Provided value: " . var_export($path, true));
+            throw new ApiException('marvin.prompts.menu is not set in the secret config');
         }
 
         return $path;
@@ -841,40 +820,6 @@ final class Marvin
      * @return list<mixed>
      */
     /**
-     * Full-prompt path for a decision made before Marvin: the calls as his own
-     * tool calls in one assistant turn, their results (plus the note) as the
-     * next user turn. Without calls, the note goes on the shopper's message.
-     *
-     * @param list<array<string,mixed>> $messages history(), ends with the shopper
-     * @param array{mode: string, calls: list<array{0: string, 1: array<string,mixed>}>, note: ?string} $seed
-     * @return list<array<string,mixed>>
-     */
-    private function seed(array $messages, array $seed, string $phone): array
-    {
-        $note = trim((string) ($seed['note'] ?? ''));
-        if ($seed['calls'] === []) {
-            return $note === '' ? $messages : $this->noteOnShopper($messages, $note);
-        }
-
-        $blocks = $results = [];
-        foreach ($seed['calls'] as [$tool, $input]) {
-            $block = ['type' => 'tool_use', 'id' => 'toolu_ts_' . bin2hex(random_bytes(10)), 'name' => $tool, 'input' => (object) $input];
-            $this->logger->info('marvin: seeded tool call', ['tool' => $tool, 'input' => $input]);
-            $blocks[]  = $block;
-            $results[] = $this->tools->run(['input' => $input] + $block, $phone);
-        }
-        if ($note !== '') {
-            // Tool results first, then text: that order is required in a user turn.
-            $results[] = ['type' => 'text', 'text' => $this->noteText($note)];
-        }
-
-        $messages[] = ['role' => 'assistant', 'content' => $blocks];
-        $messages[] = ['role' => 'user', 'content' => $results];
-
-        return $messages;
-    }
-
-    /**
      * Writer path: run the calls and put their results, the products they name
      * and the note into one note text.
      *
@@ -916,19 +861,18 @@ final class Marvin
     }
 
     /**
-     * The writer prompt: marvin.prompts.writer_shops.<shop id>, else
-     * marvin.prompts.writer, with its placeholders filled.
+     * The writer prompt (marvin.prompts.writer, one for every shop), with its
+     * placeholders filled. Missing or unreadable: an ApiException, so the
+     * shopper gets the fallback reply.
      *
-     * @return list<array<string,mixed>>|null system blocks, or null when there is no writer prompt file
+     * @return list<array<string,mixed>>
      */
-    private function writerSystemBlocks(): ?array
+    private function writerSystemBlocks(): array
     {
         if ($this->writerText === null) {
-            $path = $this->config->secret('marvin.prompts.writer_shops.' . (defined('shop_id') ? shop_id : ''), null)
-                ?? $this->config->secret('marvin.prompts.writer', null);
+            $path = $this->config->secret('marvin.prompts.writer', null);
             if (!is_string($path) || !is_readable($path)) {
-                $this->logger->info('marvin: no writer prompt file, using the full prompt', ['path' => $path]);
-                $this->writerText = '';
+                throw new ApiException('marvin.prompts.writer is not set or not readable: ' . var_export($path, true));
             } else {
                 $supports = array_values((array) $this->config->secret('support', []));
                 $this->writerText = (string) preg_replace('/\{\{[A-Z_0-9]+\}\}/', '', strtr((string) file_get_contents($path), [
@@ -940,7 +884,7 @@ final class Marvin
             }
         }
 
-        return $this->writerText === '' ? null : [[
+        return [[
             'type'          => 'text',
             'text'          => $this->writerText,
             'cache_control' => $this->cacheControl(),

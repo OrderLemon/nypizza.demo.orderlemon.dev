@@ -7,34 +7,22 @@ namespace Plugins\Whatsapp\TypeSafe;
 /**
  * What TypeSafe decided about one shopper message, ready for code to act on.
  *
- *   branch        router branch id, what it does ("do") and Marvin's
- *                 instructions for it, with its confidence
- *   language      language the message is written in
- *   requested     language the shopper asks for (null when none; "other" for
- *                 a language the shop does not list)
- *   faq           matching FAQ id (null when none)
- *   order slots   product, config options (size, base, …), quantity,
- *                 ingredient change, order time, pickup/delivery
- *   remove lines  the basket lines to take out and how many units of each
- *                 (null: all of it); only when the basket has lines
+ *   branch     router branch id, what it does ("do"), the tools Marvin may
+ *              use for it and his instructions, with its confidence
+ *   language   language the message is written in
+ *   requested  language the shopper asks for (null when none; "other" for a
+ *              language the shop does not list)
+ *   faq        matching FAQ id (null when none)
+ *   logistics  pickup or delivery, and when ("asap", …), when the message says so
  *
- * A fallback decision (TypeSafe or data unavailable) has $ok = false and a
- * reason; useMarvin() is then true and the message goes to Marvin as before.
+ * A failed decision (TypeSafe or data unavailable) has $ok = false and a
+ * reason; cannotAct() is then true and the shopper gets the fallback reply.
  */
 final readonly class Decision
 {
-    public const string ITEM_ONE = 'one';
-    public const string ITEM_NONE = 'none';
-    public const string ITEM_SEVERAL = 'several';
-
     /**
-     * @param array<string, float>                                        $branchProbabilities
-     * @param array<string, array{option: ?string, confidence: float}>     $options config group label => chosen option
-     * @param list<array{line_id: int, quantity: int, remove: ?int, p: float}> $removeLines
-     *        basket lines to take out: how many units the line has, how many to
-     *        remove (null: all), and how sure TypeSafe is
-     * @param array<int, float>   $itemProbabilities product id => probability from the menu_item question
-     * @param array<string, mixed> $state             the state TypeSafe decided on, for follow-up questions
+     * @param list<string>         $tools               tools Marvin may call for this branch
+     * @param array<string, float> $branchProbabilities
      */
     public function __construct(
         public bool $ok,
@@ -42,6 +30,7 @@ final readonly class Decision
         public ?string $fallbackReason = null,
         public ?string $branch = null,
         public ?string $do = null,
+        public array $tools = [],
         public ?string $instructions = null,
         public float $branchConfidence = 0.0,
         public array $branchProbabilities = [],
@@ -51,20 +40,8 @@ final readonly class Decision
         public float $requestedLanguageConfidence = 0.0,
         public ?string $faq = null,
         public float $faqConfidence = 0.0,
-        public string $item = self::ITEM_NONE,
-        public ?int $productId = null,
-        public ?string $productName = null,
-        public float $itemConfidence = 0.0,
-        public array $options = [],
-        public ?int $quantity = null,
-        public float $modification = 0.0,
         public ?string $orderTime = null,
         public ?string $logistics = null,
-        public array $removeLines = [],
-        public ?string $productRequest = null,
-        public float $productRequestConfidence = 0.0,
-        public array $itemProbabilities = [],
-        public array $state = [],
         public int $tokens = 0,
         public float $seconds = 0.0,
     ) {}
@@ -74,23 +51,19 @@ final readonly class Decision
         return new self(ok: false, threshold: $threshold, fallbackReason: $reason);
     }
 
-    /**
-     * True when Marvin should handle the message as before: TypeSafe failed,
-     * the router is not confident enough, or the branch hands off to Marvin.
-     */
-    public function useMarvin(): bool
+    /** True when nothing can be acted on: TypeSafe failed or is not sure enough. */
+    public function cannotAct(): bool
     {
         return $this->reason() !== null;
     }
 
-    /** Why the message goes to Marvin, or null when code can act on the decision. */
+    /** Why nothing can be acted on, or null when the decision is usable. */
     public function reason(): ?string
     {
         return match (true) {
-            !$this->ok                                  => $this->fallbackReason ?? 'typesafe_failed',
+            !$this->ok                                   => $this->fallbackReason ?? 'typesafe_failed',
             $this->branch === null || $this->do === null => 'no_branch',
             $this->branchConfidence < $this->threshold   => 'low_confidence',
-            $this->do === 'marvin'                       => 'branch_marvin',
             default                                      => null,
         };
     }
@@ -106,37 +79,34 @@ final readonly class Decision
         return $this->do !== null && str_starts_with($this->do, 'tool:') ? substr($this->do, 5) : null;
     }
 
-    public function wantsModification(): bool
+    /**
+     * The two most likely branches with their probability, for the log when
+     * TypeSafe is not sure.
+     *
+     * @return array<string, float>
+     */
+    public function topBranches(): array
     {
-        return $this->modification >= 0.5;
-    }
+        $probabilities = $this->branchProbabilities;
+        arsort($probabilities);
 
-    /** Chosen option for a config group ("Size" => "Large (40cm)"), or null. */
-    public function option(string $group): ?string
-    {
-        return $this->options[$group]['option'] ?? null;
+        return array_map(static fn(float $p): float => round($p, 2), array_slice($probabilities, 0, 2, true));
     }
 
     /** @return array<string, mixed> compact summary for logs */
     public function summary(): array
     {
         return array_filter([
-            'branch'     => $this->branch,
-            'conf'       => round($this->branchConfidence, 2),
-            'marvin'     => $this->reason(),
-            'language'   => $this->language,
-            'requested'  => $this->requestedLanguage,
-            'faq'        => $this->faq,
-            'item'       => $this->item === self::ITEM_ONE ? $this->productName : ($this->item === self::ITEM_SEVERAL ? 'several' : null),
-            'options'    => array_filter(array_map(static fn(array $o): ?string => $o['option'], $this->options)) ?: null,
-            'quantity'   => $this->quantity,
-            'modify'     => $this->wantsModification() ?: null,
-            'time'       => $this->orderTime,
-            'logistics'  => $this->logistics,
-            'remove'     => $this->removeLines === [] ? null : array_column($this->removeLines, 'remove', 'line_id'),
-            'products'   => $this->productRequest,
-            'tokens'     => $this->tokens,
-            'seconds'    => round($this->seconds, 2),
+            'branch'    => $this->branch,
+            'conf'      => round($this->branchConfidence, 2),
+            'reason'    => $this->reason(),
+            'language'  => $this->language,
+            'requested' => $this->requestedLanguage,
+            'faq'       => $this->faq,
+            'time'      => $this->orderTime,
+            'logistics' => $this->logistics,
+            'tokens'    => $this->tokens,
+            'seconds'   => round($this->seconds, 2),
         ], static fn(mixed $v): bool => $v !== null && $v !== []);
     }
 }

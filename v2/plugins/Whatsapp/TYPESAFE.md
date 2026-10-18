@@ -1,6 +1,10 @@
 # TypeSafe in the WhatsApp plugin
 
-TypeSafe makes the **decisions** for each shopper message (what to do, which language, which FAQ, which menu item, size and quantity). Code **acts** on them through Marvin's existing tools. Marvin only **writes** the reply: he never decides or runs tools on his own. When code cannot act on a decision, Marvin (without tools or menu) asks one clarifying question, replies kindly, or says he cannot help with this here and gives the team contacts. When TypeSafe fails, a fixed translated "can't help right now" is sent.
+**TypeSafe decides what to do** for every shopper message, in one call: which action, which language, which FAQ, pickup or delivery. Nothing else ever chooses the action.
+
+- **Code runs** the tool when the decision is complete (basket, checkout, tracking, hours, language, pickup/delivery "as soon as possible"…). Marvin only words the result: short writer prompt, no tools.
+- **Marvin fills in the details** when the decision needs something only he can read from the message: which items, how many, an exact time. He gets the full menu but **only the tools the branch allows** (`order` → `add_to_order`, `change_logistics`; `remove` → `remove_from_order`; `show_products` → `filter_products`). Any other tool call is blocked and logged.
+- **Fallback:** when TypeSafe is down or not sure, the branch is `unclear`, or there is nothing to run, the shopper gets the fixed translated fallback text with the team contacts (no AI call), and the reason is logged.
 
 ## Flow of one message
 
@@ -10,19 +14,18 @@ WhatsappController::receive()
   reply()                 new shopper → welcome message, no TypeSafe call
     marvinReply()
       decideWithTypeSafe()  DecisionService::decide(): one TypeSafe call → Decision
-      DecisionHandler::reply(Decision)    acts when confident, else null
-        tool:<name>   → Marvin::replyWith(tool)       the tool runs first, Marvin replies from its result
-        show_products → one item: filter_products · "the menu": its categories · "something with chicken": matching items (2nd small call)
-        order         → add_to_order (OrderSlots)      + change_logistics when "pickup/delivery asap"
+      DecisionHandler::reply(Decision)
+        tool:<name>   → code runs it, Marvin words the result (writer, no tools)
+        marvin        → Marvin::replyWithTools(branch tools)   order, remove, show products
+        tool:change_logistics → code for "asap", else Marvin with change_logistics
         faq           → approved text (no Claude call), or Marvin answering only from facts / stores / a tool
         handoff       → Marvin with the handoff text and support contacts
         language      → detect_language
-      nothing to act on → safe reply      Marvin, no tools/menu: asks, replies kindly, or says he can't help + team contacts
-      TypeSafe failed   → fixed reply     marvin_fallback text, translated, no AI
-      no text (photo)   → "I read text and voice messages"
+        reply         → one kind line ("thanks", "ok"), no tools
+      unsure / down / unclear / nothing to run → fixed fallback reply + log "typesafe: fallback"
 ```
 
-The webhook response has a `typesafe` field with the decision and `outcome`: `acted`, `safe`, `unavailable` or `no_text`.
+The webhook response has a `typesafe` field with the decision, the allowed `tools`, `outcome` (`acted`, `marvin_tools`, `fallback` or `no_text`) and `fallback_reason`.
 
 ## Classes (`src/TypeSafe/`)
 
@@ -31,20 +34,20 @@ The webhook response has a `typesafe` field with the decision and `outcome`: `ac
 | `TypeSafeClient` | One request to `POST /v1/systemone`. Retries 429/5xx/529 with short backoff, gzips large bodies, throws `TypeSafeException` |
 | `TypeSafeResult`, `TypeSafeAnswer` | Typed answers: `choice()`, `noul()`, `score()` |
 | `StateBuilder` | What TypeSafe sees: latest message, last turns, basket (with line ids), order on its way, checkout link sent. **Read-only**: never creates or updates a cart |
-| `MenuDigest` | The shop's menu trimmed to names + short descriptions, options keyed `p{product id}`; config groups (Size, Base, …) once |
+| `MenuDigest` | The shop's menu trimmed to names + short descriptions. Not used by the decision any more (Marvin reads items with the full menu) |
 | `FlowLoader`, `Flow` | The shop's flow: the shared `flows/default.flow.json` merged with the shop's own `flow.json` |
-| `DecisionService` | Flow + menu → questions, one call, a `Decision`. Never throws: errors give a fallback decision |
-| `Decision` | The result, plus `useMarvin()` / `reason()` |
-| `DecisionHandler` | Acts on a confident decision; returns the reply in Marvin's reply shape |
-| `OrderSlots` | Decision → `add_to_order`, `change_logistics`, `filter_products`, `remove_from_order` input |
+| `DecisionService` | Flow → questions, one call, a `Decision`. Never throws: errors give a fallback decision |
+| `Decision` | The result, the branch's allowed tools, plus `cannotAct()` / `reason()` |
+| `DecisionHandler` | Runs the decision: code, Marvin with the branch's tools, or the fallback; returns the reply in Marvin's reply shape |
+| `OrderSlots` | Decision → `change_logistics` input for pickup/delivery "as soon as possible" |
 | `LanguageDetector` | First-message language; saved only with ≥ `save_min_words` words and ≥ `save_min_confidence` |
 
 Marvin gets one of two inputs:
 
-- **`Marvin::replyWith($calls, $note)`, when TypeSafe decided (writer mode).** The calls run in code first, through the same `MarvinTools::run()` Marvin uses, so cart, tracking, buttons and links behave as before. Their results, the products they name and the note (branch, confidence, instructions, facts) go on the shopper's message as one internal note. Marvin gets the **writer prompt** (`marvin_writer.v1.txt`: his voice plus how to word a result), the last 8 turns and **no tools**: one plain call, he only words the reply. About 3,300 characters instead of about 88,700 for shop 99. Without a writer prompt file the full prompt is used, with the calls as his own tool calls.
-- **`Marvin::replyWithNote($note)`, when TypeSafe could not decide on its own** (no clear menu item, no clear basket line): the full prompt and all tools, with what TypeSafe read as a note. Marvin decides himself.
+- **`Marvin::replyWith($calls, $note)`, when code ran the tool (writer mode).** The calls run in code first, through the same `MarvinTools::run()` Marvin uses, so cart, tracking, buttons and links behave as before. Their results and the note go on the shopper's message as one internal note. Marvin gets the **writer prompt** (`marvin_writer.v1.txt`), the last 8 turns and **no tools**.
+- **`Marvin::replyWithTools($tools, $note)`, when he fills in the details.** Full prompt and menu, but only `$tools`. The note says what TypeSafe decided and to ask (not guess) when something needed is not said. He may answer without a tool call when he has to ask ("which pizza?"); that is logged as `marvin: no tool called`.
 
-`Marvin::reply()` (TypeSafe unsure, `unclear`, or an error) is unchanged: full prompt, all tools.
+`Marvin::reply()` (Marvin with all tools, deciding himself) is not used by the WhatsApp flow.
 
 ## Configuration (secret JSON)
 
@@ -59,24 +62,29 @@ Marvin gets one of two inputs:
 }
 ```
 
-Without a key the service still starts, but every message gets the fixed "can't help right now" reply (`outcome: unavailable`). `Marvin::reply()` (Marvin deciding on his own with the full prompt) is no longer used by the WhatsApp flow.
+Without a key the service still starts, but every message gets the fallback reply (`outcome: fallback`).
 
-In the `marvin` block:
+In the `marvin` block, two prompts, the same for every shop:
 
 ```json
 "prompts": {
   "writer": "/home/demo.data/marvin_prompts/marvin_writer.v1.txt",
-  "writer_shops": { "99": "/path/to/a/shop/specific/writer.txt" }
+  "menu":   "/home/demo.data/marvin_prompts/marvin_menu.v1.txt"
 }
 ```
 
-`marvin_writer.v1.txt` is in the repo root next to the other prompts. Placeholders: `{{COMPANY_NAME}}` (shop name), `{{CLIENT_NAME}}`, `{{SUPPORT_1}}`, `{{SUPPORT_2}}`. `writer_shops` is optional, for a shop with its own voice.
+| Prompt | Used when | Tools |
+|---|---|---|
+| `marvin_writer.v1.txt` | code ran the tool, FAQ, handoff, language, "thanks", photos | none |
+| `marvin_menu.v1.txt` | Marvin fills in the details (order, remove, show products, exact time) | only the branch's tools |
 
-Optional, in the `marvin` block: `"writer_model": "<claude model id>"` to word TypeSafe-decided replies with another (e.g. cheaper) model than the one Marvin decides with. Without it, the configured `marvin.model` is used.
+Both are in the repo root. Shop data comes from placeholders: `{{COMPANY_NAME}}`, `{{CLIENT_NAME}}`, `{{SUPPORT_1}}`, `{{SUPPORT_2}}` (writer); `{{COMPANY_NAME}}`, `{{CLIENT_NAME}}`, `{{MENU_JSON}}`, `{{PICKUP_HOURS}}`, `{{DELIVERY_HOURS}}`, `{{LAST_ORDER_TODAY}}` (menu). There is no other prompt to fall back to: a missing or unreadable prompt gives the fallback reply (`fallback_reason: marvin_failed`). `marvin.prompts.main`, `shops`, `wine_specialist` and `writer_shops` are no longer used; `reminder` is still used by the reminder script.
+
+Optional: `"writer_model": "<claude model id>"` to word writer replies with another (e.g. cheaper) model than `marvin.model`.
 
 ## Flows
 
-- **`flows/default.flow.json`** (repo): used by **every** shop. Router branches, generic FAQs that answer from shop data (opening hours, locations), the handoff, languages, thresholds.
+- **`flows/default.flow.json`** (repo): used by **every** shop. Router branches, generic FAQs that answer from shop data (opening hours, locations, and `about_shop` from the shop's background page; that one is only offered to TypeSafe when the shop has a page in `web_sources`), the handoff, languages, thresholds.
 - **`/home/demo.data/{shop_id}/flow.json`** (server, optional): only what is specific to that shop. Merged by `id`: an existing entry is updated field by field, a new one is added, `"disabled": true` removes a shared one. Texts merge per key and language.
 
 Shop data is never copied into a flow: menu, branches, hours, shop name and support contacts come from the code at runtime (`answer_from: "stores"`, `do: "tool:get_ordering_hours"`, `{{SHOP_NAME}}`, `{{SUPPORT_1}}`, `{{SUPPORT_2}}`).
@@ -84,12 +92,19 @@ Shop data is never copied into a flow: menu, branches, hours, shop name and supp
 ### Router branch
 
 ```json
-{ "id": "handoff", "do": "handoff",
-  "description": "Wants money back, a discount or a price correction",
-  "instructions": "Apologise once. Give the team contacts from the facts." }
+{ "id": "order", "do": "marvin", "tools": ["add_to_order", "change_logistics"],
+  "description": "Wants items put in the basket: names items to have, says yes to items Marvin just offered, …" }
 ```
 
-`do`: `tool:<marvin tool>`, `order`, `faq`, `language`, `handoff`, `marvin`. `description` is what TypeSafe chooses on: keep descriptions distinct, overlapping ones cause confident wrong answers.
+| `do` | What happens |
+|---|---|
+| `tool:<name>` | code runs the tool, Marvin words the result. With `tools`, Marvin gets those when code cannot fill the input (e.g. a pickup time other than "asap") |
+| `marvin` | Marvin with only the listed `tools` (required) |
+| `faq`, `language`, `handoff` | see below |
+| `reply` | nothing to do: one kind line, no tools |
+| `fallback` | the fixed fallback reply |
+
+`description` is what TypeSafe chooses on: keep descriptions distinct, overlapping ones cause confident wrong answers. Optional `instructions` are passed to Marvin.
 
 ### FAQ entry
 
@@ -114,7 +129,7 @@ $errors = $container->get(FlowLoader::class)->check('/path/to/flow.json');   // 
 
 ## Deploying
 
-1. Add the `typesafe` block (with the key) to the server's secret config.
+1. Add the `typesafe` block (with the key) and `marvin.prompts.writer` / `marvin.prompts.menu` to the server's secret config, and copy `marvin_writer.v1.txt` and `marvin_menu.v1.txt` to `/home/demo.data/marvin_prompts/`.
 2. Copy shop flows, if a shop has one, to `/home/demo.data/<shop id>/flow.json` on the server. No shop has one yet: `test-env/flows/99.flow.json.draft` is set aside (its content came from the real Poké Perfect prompt and does not match the demo).
 3. Check the log for `typesafe: decision` lines (`local_log.level: info`).
 
@@ -145,17 +160,16 @@ docker compose exec app php /opt/pmsrapi/v2/plugins/Whatsapp/bin/reset_shopper.p
 
 | Line | Means |
 |---|---|
-| `typesafe: decision` | what TypeSafe decided (branch, confidence, item, options, tokens, seconds) |
-| `typesafe: running tool` / `adding to order` / `answering FAQ` / `handoff` / `switching language` | the handler acted |
-| `typesafe: not handled, using Marvin` | confident, but nothing to act on for that branch |
-| `typesafe: menu overview` / `showing matching products` / `matching products` | "show me the menu" / "something with chicken" handled |
-| `typesafe: decision failed, using Marvin` | TypeSafe error; `code` says which |
-| `marvin: seeded tool call` | Marvin replying from a tool TypeSafe ran |
+| `typesafe: decision` | what TypeSafe decided (branch, confidence, tokens, seconds) |
+| `typesafe: running tool` / `answering FAQ` / `handoff` / `switching language` | code acted |
+| `typesafe: Marvin with tools` | Marvin fills in the details; `tools` says which he may use |
+| `marvin: tool call` / `marvin: tool blocked` / `marvin: no tool called` | what Marvin did with them |
+| `typesafe: fallback` | fallback reply: `why` (`typesafe_*` error, `low_confidence`, `unclear`, `not_handled`), the message, and TypeSafe's top 2 branches |
+| `typesafe: decision failed` | TypeSafe error; `code` says which |
 | `marvin: writer reply` / `writer tool call` | writer mode: which calls ran, prompt size, model |
 | `typesafe: language` | first-message language, and whether it was saved |
 
 ## Not done yet
 
-- **Several options in one group** (e.g. 3 toppings). TypeSafe picks one; Marvin asks for the rest.
-- **A specific pickup or delivery time** ("om 19:00", at 19:00). Only "as soon as possible" is set directly; Marvin handles the rest.
+- **Products built over several messages** (Build Your Own Bowl): Marvin builds them with `add_to_order`, nothing in code keeps the half-built item yet.
 - **Shop-specific FAQs for shop 99.** `test-env/flows/99.flow.json.draft` holds a draft taken from the real Poké Perfect prompt; it is not used until it has the demo's own answers.
