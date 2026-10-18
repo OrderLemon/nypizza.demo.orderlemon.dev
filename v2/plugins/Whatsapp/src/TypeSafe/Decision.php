@@ -30,6 +30,8 @@ final readonly class Decision
     /**
      * @param array<string, float>                                        $branchProbabilities
      * @param array<string, array{option: ?string, confidence: float}>     $options config group label => chosen option
+     * @param array<int, float>   $itemProbabilities product id => probability from the menu_item question
+     * @param array<string, mixed> $state             the state TypeSafe decided on, for follow-up questions
      */
     public function __construct(
         public bool $ok,
@@ -59,6 +61,10 @@ final readonly class Decision
         public ?int $basketLineQuantity = null,
         public float $basketLineConfidence = 0.0,
         public ?int $removeCount = null,
+        public ?string $productRequest = null,
+        public float $productRequestConfidence = 0.0,
+        public array $itemProbabilities = [],
+        public array $state = [],
         public int $tokens = 0,
         public float $seconds = 0.0,
     ) {}
@@ -129,6 +135,7 @@ final readonly class Decision
             'logistics'  => $this->logistics,
             'line'       => $this->basketLineId,
             'remove'     => $this->removeCount,
+            'products'   => $this->productRequest,
             'tokens'     => $this->tokens,
             'seconds'    => round($this->seconds, 2),
         ], static fn(mixed $v): bool => $v !== null && $v !== []);

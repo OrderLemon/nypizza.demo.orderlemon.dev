@@ -178,13 +178,16 @@ final class Marvin
     }
 
     /**
-     * reply(), with an internal note on the shopper's message: what TypeSafe
-     * read when it could not decide on its own. Marvin decides himself, with
-     * the full prompt and all tools.
+     * The fixed "I can't help right now" reply (marvin_fallback, translated,
+     * with the support contacts), for when TypeSafe is unavailable. No AI call.
+     *
+     * @return array{type: string, message: string}
      */
-    public function replyWithNote(array $conversation, ?string $clientName, ?string $phone, ?string $language, string $note): array
+    public function unavailable(?string $language): array
     {
-        return $this->respond($conversation, $clientName, $phone, $language, ['mode' => 'hint', 'calls' => [], 'note' => $note]);
+        $this->replyLanguage = ($language !== null && $language !== '') ? $language : 'en';
+
+        return ['type' => self::FALLBACK_SOURCE, 'message' => $this->fallback()];
     }
 
     /**
@@ -238,11 +241,18 @@ final class Marvin
                 ]);
             } else {
                 $system = $this->systemBlocks();
-                $tools  = $this->tools->definitions();
+                // A writer reply with nothing to run (a safe reply) never gets tools,
+                // not even on the full prompt when there is no writer prompt file.
+                $tools  = ($seed['mode'] ?? null) === 'writer' && $seed['calls'] === [] ? [] : $this->tools->definitions();
                 if ($seed !== null) {
                     $messages = $this->seed($messages, $seed, $phone);
                 }
             }
+
+            // Text Marvin writes in a turn that also calls a tool (e.g. a
+            // product list next to filter_products) is part of his answer:
+            // the final turn often only continues it ("We've also got…").
+            $earlier = [];
 
             for ($turn = 1; $turn <= self::MAX_TOOL_TURNS; $turn++) {
                 $lastTurn = $turn === self::MAX_TOOL_TURNS;
@@ -255,10 +265,17 @@ final class Marvin
                 if (($body['stop_reason'] ?? null) !== 'tool_use') {
                     // The only exit that carries an answer. $this->tracking was
                     // set on the previous pass, if a tool produced one.
-                    return $this->replyFrom($body);
+                    return $this->replyFrom($body, implode("\n\n", $earlier));
                 }
 
                 $content = is_array($body['content'] ?? null) ? $body['content'] : [];
+
+                foreach ($content as $block) {
+                    $text = is_array($block) && ($block['type'] ?? '') === 'text' ? trim($this->stripStaleNotes((string) ($block['text'] ?? ''))) : '';
+                    if ($text !== '') {
+                        $earlier[] = $text;
+                    }
+                }
 
                 // The assistant turn goes back VERBATIM — text blocks and
                 // tool_use blocks together. Appending only the text is the
@@ -315,12 +332,19 @@ final class Marvin
      * conversation language, and therefore this reply's buttons/captions,
      * stuck one turn behind even though the DB was already updated.
      *
-     * @param array<string,mixed> $body the final API response
+     * @param array<string,mixed> $body    the final API response
+     * @param string              $earlier text from earlier turns of this reply that also called a tool
      * @return array{type: string, message: string, language?: string, tracking?: array<string,mixed>}
      */
-     private function replyFrom(array $body): array
+     private function replyFrom(array $body, string $earlier = ''): array
     {
         $message    = $this->textOf($body);
+        if ($earlier !== '') {
+            // An empty final turn falls back in textOf(); the earlier text is the answer then.
+            $message = $message === $this->fallback() || str_starts_with($message, $earlier)
+                ? ($message === $this->fallback() ? $earlier : $message)
+                : $earlier . "\n\n" . $message;
+        }
         $attachment = $this->tools->attachment();
 
         if ($attachment === null) {
