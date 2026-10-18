@@ -220,35 +220,33 @@ final class DecisionService
             ];
         }
 
-        // Which basket line the message is about, and how many to remove;
-        // only when the basket has lines (StateBuilder gives their ids).
-        $lines = [];
+        // Per basket line: is it to be taken out, and how many units. A basket
+        // has few lines, so this fits in the same call and handles "remove the
+        // salad and the platter" as well as "yes" to removing what Marvin named.
+        $hasLines = false;
         foreach ((array) ($state['basket'] ?? []) as $line) {
-            if (is_array($line) && isset($line['line_id'], $line['item'])) {
-                $options = (array) ($line['options'] ?? []);
-                $lines['l' . (int) $line['line_id']] = sprintf('%s x%d', $line['item'], (int) ($line['quantity'] ?? 1))
-                    . ($options !== [] ? ', ' . implode(', ', $options) : '');
+            if (!is_array($line) || !isset($line['line_id'], $line['item'])) {
+                continue;
             }
-        }
-        if ($lines !== []) {
-            $questions['basket_line'] = [
-                'type' => 'choice',
-                'instructions' => self::CONTEXT . ' Which line of `basket` is `latest_message` about, for example to '
-                    . 'remove it or change how many? Use `history` when they refer to it with that one or the second one.',
-                'criteria' => $lines + [
-                    'none' => 'The message is not about a line in the basket',
-                    'several' => 'More than one line, or it is not clear which one',
-                ],
+            $hasLines = true;
+            $id = (int) $line['line_id'];
+            $options = (array) ($line['options'] ?? []);
+            $describe = sprintf('%s x%d', $line['item'], (int) ($line['quantity'] ?? 1)) . ($options !== [] ? ', ' . implode(', ', $options) : '');
+            $questions["remove_l{$id}"] = [
+                'type' => 'noul',
+                'instructions' => "Does `latest_message` ask to take this basket line out, all or some of it: {$describe}? "
+                    . 'Use `history` when they say yes to removing items the assistant named.',
             ];
-            $questions['remove_quantity'] = [
+            $questions["remove_l{$id}_count"] = [
                 'type' => 'choice',
-                'instructions' => 'How many units does `latest_message` ask to take out of the basket line it is about?',
+                'instructions' => "How many units of {$line['item']} does `latest_message` ask to take out of the basket?",
                 'criteria' => [
-                    'all' => 'All of them, or the whole line',
+                    'all' => 'All of them, the whole line, or no number given',
                     'one' => 'One', 'two' => 'Two', 'three' => 'Three', 'four_or_more' => 'Four or more',
-                    'not_mentioned' => 'No number is given',
                 ],
             ];
+        }
+        if ($hasLines) {
             $maps['__basket'] = array_map(
                 static fn(array $l): string => (string) (int) ($l['quantity'] ?? 1),
                 array_column(array_filter((array) $state['basket'], static fn($l) => is_array($l) && isset($l['line_id'])), null, 'line_id'),
@@ -272,13 +270,9 @@ final class DecisionService
     public function matchingProducts(Decision $decision, int $max = 5): ?array
     {
         $items = $this->menu->items();
-        $candidates = array_slice(array_keys($decision->itemProbabilities), 0, 15);
-        if (array_sum(array_slice($decision->itemProbabilities, 0, 15)) < 0.05 || $candidates === []) {
-            $candidates = array_slice(array_keys($items), 0, 120);
-        }
 
         $questions = [];
-        foreach ($candidates as $id) {
+        foreach ($this->candidates($decision) as $id) {
             if (!isset($items[$id])) {
                 continue;
             }
@@ -321,6 +315,123 @@ final class DecisionService
         return $ids;
     }
 
+    /**
+     * The items an order message names and how many of each ("a seaweed salad
+     * and 2 poke nachos", or "yes" to items the assistant listed): a second,
+     * small call with, per candidate, "is it ordered?" and "how many?".
+     * Best first, at most $max. Null when TypeSafe is unavailable.
+     *
+     * @return list<array{product_id: int, quantity: int}>|null
+     */
+    public function orderedItems(Decision $decision, int $max = 6): ?array
+    {
+        $items = $this->menu->items();
+
+        $questions = [];
+        foreach ($this->candidates($decision) as $id) {
+            if (!isset($items[$id])) {
+                continue;
+            }
+            $item = $items[$id]['name'] . ($items[$id]['about'] !== '' ? ': ' . $items[$id]['about'] : '');
+            $questions["p{$id}"] = [
+                'type' => 'noul',
+                'instructions' => "Does the shopper order this menu item in `latest_message`: {$item}? Use `history` when they say yes "
+                    . 'to items the assistant just offered or listed. Only yes for this exact item, not for an item with a similar word in its name.',
+            ];
+            $questions["q{$id}"] = [
+                'type' => 'choice',
+                'instructions' => "How many of {$items[$id]['name']} does the shopper order in `latest_message`, or in the offer they say yes to in `history`?",
+                'criteria' => [
+                    'one' => 'One, or no number given', 'two' => 'Two', 'three' => 'Three', 'four' => 'Four',
+                    'five' => 'Five', 'six_or_more' => 'Six or more',
+                ],
+            ];
+        }
+        if ($questions === []) {
+            return null;
+        }
+
+        try {
+            $result = $this->client->ask([
+                'latest_message' => $decision->state['latest_message'] ?? '',
+                'history' => $decision->state['history'] ?? [],
+            ], $questions);
+        } catch (TypeSafeException $e) {
+            $this->logger->warning('typesafe: ordered items failed', ['code' => $e->errorCode()]);
+
+            return null;
+        }
+
+        $ordered = [];
+        foreach ($questions as $key => $question) {
+            if ($question['type'] !== 'noul' || ($p = (float) $result->noul($key)->noul) < 0.5) {
+                continue;
+            }
+            $id = (int) substr($key, 1);
+            $ordered[$id] = ['p' => $p, 'quantity' => match ($result->choice("q{$id}")->choice) {
+                'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5, 'six_or_more' => 6, default => 1,
+            }];
+        }
+        uasort($ordered, static fn(array $a, array $b): int => $b['p'] <=> $a['p']);
+
+        $items = [];
+        foreach (array_slice($ordered, 0, $max, true) as $id => $o) {
+            $items[] = ['product_id' => $id, 'quantity' => $o['quantity']];
+        }
+
+        $this->logger->info('typesafe: ordered items', [
+            'checked' => count($questions) / 2, 'items' => $items, 'tokens' => $result->inputTokens + $result->outputTokens,
+        ]);
+
+        return $items;
+    }
+
+    /**
+     * Menu items to ask about in a follow-up call, at most 20: the items the
+     * first call found likely, then items whose name shares a word with the
+     * shopper's message or the assistant's last message (for a "yes" to a
+     * list). Every item only when neither gives anything.
+     *
+     * @return list<int>
+     */
+    private function candidates(Decision $decision): array
+    {
+        $likely = array_keys(array_filter($decision->itemProbabilities, static fn(float $p): bool => $p >= 0.01));
+
+        $lastAssistant = '';
+        foreach (array_reverse((array) ($decision->state['history'] ?? [])) as $turn) {
+            if (($turn['from'] ?? '') === 'Marvin') {
+                $lastAssistant = (string) ($turn['text'] ?? '');
+                break;
+            }
+        }
+        $text = $this->words(($decision->state['latest_message'] ?? '') . ' ' . $lastAssistant);
+
+        $named = [];
+        foreach ($this->menu->items() as $id => $item) {
+            if (array_intersect($this->words($item['name']), $text) !== []) {
+                $named[] = $id;
+            }
+        }
+
+        $candidates = array_slice(array_values(array_unique([...array_slice($likely, 0, 15), ...$named])), 0, 20);
+
+        return $candidates !== [] ? $candidates : array_slice(array_keys($this->menu->items()), 0, 120);
+    }
+
+    /**
+     * Lowercase words of at least 4 letters, accents removed ("Poké" = "poke").
+     *
+     * @return list<string>
+     */
+    private function words(string $text): array
+    {
+        $plain = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', mb_strtolower($text)) ?: mb_strtolower($text);
+        $words = preg_split('/[^a-z0-9]+/', $plain) ?: [];
+
+        return array_values(array_unique(array_filter($words, static fn(string $w): bool => strlen($w) >= 4)));
+    }
+
     /** @param array<string, array<string, string>> $maps */
     private function read(TypeSafeResult $result, Flow $flow, array $maps, array $state): Decision
     {
@@ -354,9 +465,21 @@ final class DecisionService
         $basketQuantities = $maps['__basket'] ?? [];
         unset($maps['__basket']);
 
-        $line = $result->has('basket_line') ? $result->choice('basket_line') : null;
-        $lineId = $line !== null && preg_match('/^l(\d+)$/', $line->choice, $m) === 1 ? (int) $m[1] : null;
-        $remove = $result->has('remove_quantity') ? $result->choice('remove_quantity')->choice : null;
+        $removeLines = [];
+        foreach ($basketQuantities as $lineId => $quantity) {
+            $lineId = (int) $lineId;
+            if (!$result->has("remove_l{$lineId}") || ($p = (float) $result->noul("remove_l{$lineId}")->noul) < 0.5) {
+                continue;
+            }
+            $removeLines[] = [
+                'line_id'  => $lineId,
+                'quantity' => (int) $quantity,
+                'remove'   => match ($result->choice("remove_l{$lineId}_count")->choice) {
+                    'one' => 1, 'two' => 2, 'three' => 3, 'four_or_more' => 4, default => null,
+                },
+                'p'        => $p,
+            ];
+        }
 
         $options = [];
         foreach ($maps as $questionId => $map) {
@@ -396,12 +519,7 @@ final class DecisionService
             productRequestConfidence: (float) ($productRequest?->confidence ?? 0.0),
             itemProbabilities: $itemProbabilities,
             state: $state,
-            basketLineId: $lineId,
-            basketLineQuantity: $lineId === null || !isset($basketQuantities[$lineId]) ? null : (int) $basketQuantities[$lineId],
-            basketLineConfidence: (float) ($line?->confidence ?? 0.0),
-            removeCount: match ($remove) {
-                'one' => 1, 'two' => 2, 'three' => 3, 'four_or_more' => 4, default => null,
-            },
+            removeLines: $removeLines,
             tokens: $result->inputTokens + $result->outputTokens,
             seconds: $result->seconds,
         );

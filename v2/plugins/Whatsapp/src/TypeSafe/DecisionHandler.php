@@ -37,8 +37,9 @@ use Pmsrapi\V2\Support\Logger;
  *   handoff      Marvin, with the branch instructions, the handoff text and the
  *                support contacts
  *   order        add_to_order with the menu item, options and quantity TypeSafe
- *                read (OrderSlots); not one clear item: Marvin, with what
- *                TypeSafe read as a note
+ *                read (OrderSlots); several items ("a salad and 2 nachos", or
+ *                "yes" to a list): add_to_order per item with its own quantity
+ *                (DecisionService::orderedItems()); still unclear: safe reply
  *   tool:change_logistics
  *                pickup or delivery "as soon as possible"; a later time: Marvin
  *   tool:filter_products
@@ -46,8 +47,8 @@ use Pmsrapi\V2\Support\Logger;
  *                items (DecisionService::matchingProducts()); "show me the
  *                menu": the categories, with the menu button
  *   tool:remove_from_order
- *                the basket line TypeSafe picked, whole or partly; not one clear
- *                line: Marvin, with what TypeSafe read as a note
+ *                every basket line TypeSafe says is to be taken out, whole or
+ *                partly; none clear: safe reply asking which
  */
 final class DecisionHandler
 {
@@ -157,8 +158,20 @@ final class DecisionHandler
     {
         $tool = MarvinTool::tryFrom((string) $decision->tool());
 
-        if ($tool === MarvinTool::RemoveFromOrder && $this->slots->removeFromOrder($decision) === null) {
-            $this->logger->info('typesafe: remove without one clear basket line, Marvin decides', ['line' => $decision->basketLineId]);
+        if ($tool === MarvinTool::RemoveFromOrder && ($lines = $this->slots->removeLines($decision)) !== []) {
+            $this->logger->info('typesafe: removing', ['lines' => $lines]);
+
+            return $reply(
+                array_map(static fn(array $input): array => [MarvinTool::RemoveFromOrder->value, $input], $lines),
+                $this->note($decision, ranTool: true, instructions: $this->join(
+                    count($lines) > 1 ? 'Several lines were changed, one result each. Say what was removed in one short list. Give the total from the last result.' : null,
+                    $decision->instructions,
+                )),
+            );
+        }
+
+        if ($tool === MarvinTool::RemoveFromOrder) {
+            $this->logger->info('typesafe: remove without a clear basket line');
 
             $basket = (string) json_encode(array_map(
                 static fn(array $l): array => ['item' => $l['item'] ?? '', 'quantity' => $l['quantity'] ?? 1, 'options' => $l['options'] ?? []],
@@ -175,7 +188,6 @@ final class DecisionHandler
         $input = match ($tool) {
             MarvinTool::ChangeLogistics => $this->slots->changeLogistics($decision),
             MarvinTool::FilterProducts  => $this->slots->filterProducts($decision),
-            MarvinTool::RemoveFromOrder => $this->slots->removeFromOrder($decision),
             default                     => false,
         };
         if ($input !== false) {
@@ -252,6 +264,27 @@ final class DecisionHandler
     private function order(Decision $decision, callable $reply, callable $safe): ?array
     {
         $input = $this->slots->addToOrder($decision);
+
+        // Several items in one message: one add_to_order per item, each with its own quantity.
+        if ($input === null && $decision->item === Decision::ITEM_SEVERAL
+            && ($items = $this->decisions->orderedItems($decision)) !== null && $items !== []) {
+            $calls = array_map(
+                static fn(array $i): array => [MarvinTool::AddToOrder->value, ['product_id' => $i['product_id'], 'quantity' => $i['quantity']]],
+                $items,
+            );
+            $logistics = $this->slots->changeLogistics($decision);
+            if ($logistics !== null) {
+                $calls[] = [MarvinTool::ChangeLogistics->value, $logistics];
+            }
+            $this->logger->info('typesafe: adding several items', ['items' => $items]);
+
+            return $reply($calls, $this->note($decision, ranTool: true, instructions: $this->join(
+                'Several items were added, one result each. Say what was added in one short list; for any result that says '
+                . 'needs_options, ask for exactly those choices for that item. Give the total from the last result.',
+                $this->slots->extras($decision, logisticsHandled: $logistics !== null),
+                $decision->instructions,
+            )));
+        }
 
         if ($input === null) {
             $read = match ($decision->item) {
@@ -398,7 +431,8 @@ final class DecisionHandler
     private function safeNote(Decision $decision, string $why, string $facts, string $instructions): string
     {
         $note = 'Nothing was done for the shopper\'s latest message. You cannot change the basket, place or look up '
-            . 'orders, or give any information that is not in this note or the earlier conversation.';
+            . 'orders, or give any information that is not in this note or the earlier conversation. Never say that you '
+            . 'can, will or did do something; ask or explain instead.';
 
         if ($decision->ok && $decision->branch === 'no_action' && $instructions === '') {
             return $note . ' Nothing needs doing: reply briefly and kindly in one line, without asking anything new.';
