@@ -18,6 +18,10 @@ use Pmsrapi\V2\Support\Logger;
  *
  * TypeSafe does the detection; when it is unavailable, LanguageHelper's
  * Claude call is the fallback (saved only when the message is long enough).
+ *
+ * After that, switchTo() reads the language TypeSafe already gives with every
+ * decision, so a shopper who changes language mid-conversation gets their
+ * buttons and captions in the new one too, without an extra call.
  */
 final class LanguageDetector
 {
@@ -77,6 +81,29 @@ final class LanguageDetector
         $this->logger->info('typesafe: language', $result + ['detected' => $answer->choice, 'words' => $this->words($message)]);
 
         return $result;
+    }
+
+    /**
+     * The language to switch the shopper to, or null to keep $current. Only
+     * a real sentence in a supported language, with the same rules as saving
+     * the first one: at least save_min_words words and save_min_confidence.
+     */
+    public function switchTo(Decision $decision, string $message, ?string $current): ?string
+    {
+        $flow = $this->flows->forShop();
+        $language = $decision->language;
+
+        // An explicit request ("can you speak Dutch") is the language branch's job.
+        if (!$decision->ok || $decision->do === 'language' || $language === null || $language === $current
+            || !in_array($language, $flow->languages(), true)
+            || $decision->languageConfidence < $flow->saveLanguageMinConfidence()
+            || $this->words(trim($message)) < $flow->saveLanguageMinWords()) {
+            return null;
+        }
+
+        $this->logger->info('typesafe: language switch', ['from' => $current, 'to' => $language, 'confidence' => round($decision->languageConfidence, 2)]);
+
+        return $language;
     }
 
     /** Words with at least one letter; emoji, numbers and punctuation do not count. */

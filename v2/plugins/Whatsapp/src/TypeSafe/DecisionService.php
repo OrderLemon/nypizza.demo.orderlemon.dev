@@ -57,7 +57,14 @@ final class DecisionService
             return Decision::fallback('state_unavailable');
         }
 
-        return $this->decideFor($state, $flow);
+        try {
+            return $this->decideFor($state, $flow);
+        } catch (\Throwable $e) {
+            // Boundary: an unexpected error must still give the shopper the fallback reply, not silence.
+            $this->logger->error('typesafe: unexpected decision error', ['error' => $e->getMessage(), 'class' => $e::class]);
+
+            return Decision::fallback('decision_error', $flow->threshold());
+        }
     }
 
     /**
@@ -95,11 +102,6 @@ final class DecisionService
     /** @return array<string, array<string, mixed>> */
     private function questions(Flow $flow): array
     {
-        $router = [];
-        foreach ($flow->router() as $branch) {
-            $router[$branch['id']] = $branch['description'];
-        }
-
         $faq = [];
         foreach ($flow->faq() as $entry) {
             // Answered from the shop's background page: only offered when the shop has one.
@@ -108,6 +110,22 @@ final class DecisionService
             }
             $faq[$entry['id']] = $entry['match'];
         }
+
+        // A faq branch is only as wide as the FAQs this shop can answer: it
+        // lists them, so a question nothing answers goes elsewhere instead of
+        // ending in a FAQ with no answer. No FAQs at all: no faq branch.
+        $router = [];
+        foreach ($flow->router() as $branch) {
+            if (($branch['do'] ?? null) === 'faq') {
+                if ($faq === []) {
+                    continue;
+                }
+                $router[$branch['id']] = rtrim($branch['description'], '. ') . ': ' . implode('; ', $faq);
+                continue;
+            }
+            $router[$branch['id']] = $branch['description'];
+        }
+        $hasFaq = $faq !== [];
         $faq['none'] = 'The message is not one of these questions';
 
         $languages = [];
@@ -115,7 +133,7 @@ final class DecisionService
             $languages[$code] = self::LANGUAGE_NAMES[$code] ?? $code;
         }
 
-        return [
+        $questions = [
             'route' => [
                 'type' => 'choice',
                 'instructions' => self::CONTEXT . ' What should Marvin do now? Read short replies such as yes, 1, '
@@ -138,7 +156,8 @@ final class DecisionService
                     + $languages
                     + ['other' => 'Asks for a language that is not listed here'],
             ],
-            'faq' => [
+            // Only asked when the shop has FAQs: a choice with just "none" says nothing.
+            'faq' => !$hasFaq ? null : [
                 'type' => 'choice',
                 'instructions' => 'Which of these questions does the shopper ask in `latest_message`?',
                 'criteria' => $faq,
@@ -164,6 +183,8 @@ final class DecisionService
                 ],
             ],
         ];
+
+        return array_filter($questions, static fn(?array $q): bool => $q !== null);
     }
 
     private function read(TypeSafeResult $result, Flow $flow): Decision
@@ -173,7 +194,7 @@ final class DecisionService
 
         $language = $result->choice('language');
         $requested = $result->choice('requested_language');
-        $faq = $result->choice('faq');
+        $faq = $result->has('faq') ? $result->choice('faq') : null;
         $time = $result->choice('order_time');
         $logistics = $result->choice('logistics');
 
@@ -190,8 +211,8 @@ final class DecisionService
             languageConfidence: (float) $language->confidence,
             requestedLanguage: $requested->choice === 'none' ? null : $requested->choice,
             requestedLanguageConfidence: (float) $requested->confidence,
-            faq: $faq->choice === 'none' || $flow->faqEntry($faq->choice) === null ? null : $faq->choice,
-            faqConfidence: (float) $faq->confidence,
+            faq: $faq === null || $faq->choice === 'none' || $flow->faqEntry($faq->choice) === null ? null : $faq->choice,
+            faqConfidence: (float) ($faq?->confidence ?? 0.0),
             orderTime: $time->choice === 'not_mentioned' ? null : $time->choice,
             logistics: $logistics->choice === 'not_mentioned' ? null : $logistics->choice,
             tokens: $result->inputTokens + $result->outputTokens,

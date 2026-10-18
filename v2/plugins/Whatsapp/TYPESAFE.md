@@ -3,8 +3,8 @@
 **TypeSafe decides what to do** for every shopper message, in one call: which action, which language, which FAQ, pickup or delivery. Nothing else ever chooses the action.
 
 - **Code runs** the tool when the decision is complete (basket, checkout, tracking, hours, language, pickup/delivery "as soon as possible"…). Marvin only words the result: short writer prompt, no tools.
-- **Marvin fills in the details** when the decision needs something only he can read from the message: which items, how many, an exact time. He gets the full menu but **only the tools the branch allows** (`order` → `add_to_order`, `change_logistics`; `remove` → `remove_from_order`; `show_products` → `filter_products`). Any other tool call is blocked and logged.
-- **Fallback:** when TypeSafe is down or not sure, the branch is `unclear`, or there is nothing to run, the shopper gets the fixed translated fallback text with the team contacts (no AI call), and the reason is logged.
+- **Marvin fills in the details** when the decision needs something only he can read from the message: which items, how many, an exact time. He gets the full menu but **only the tools the branch allows** (`products` → `filter_products`, `add_to_order`, `change_logistics`; `remove` → `get_cart`, `remove_from_order`). Any other tool call is blocked and logged.
+- **Fallback:** when TypeSafe is down or not sure, the branch is `unclear`, or there is nothing to run, the shopper gets the fixed translated fallback text, "Sorry, I can't help you with this at the moment." (no AI call), and the reason is logged.
 
 ## Flow of one message
 
@@ -16,10 +16,10 @@ WhatsappController::receive()
       decideWithTypeSafe()  DecisionService::decide(): one TypeSafe call → Decision
       DecisionHandler::reply(Decision)
         tool:<name>   → code runs it, Marvin words the result (writer, no tools)
-        marvin        → Marvin::replyWithTools(branch tools)   order, remove, show products
+        marvin        → Marvin::replyWithTools(branch tools)   products (show and order), remove
         tool:change_logistics → code for "asap", else Marvin with change_logistics
         faq           → approved text (no Claude call), or Marvin answering only from facts / stores / a tool
-        handoff       → Marvin with the handoff text and support contacts
+        handoff       → Marvin with the handoff text: apologises, can't arrange it in this chat
         language      → detect_language
         reply         → one kind line ("thanks", "ok"), no tools
       unsure / down / unclear / nothing to run → fixed fallback reply + log "typesafe: fallback"
@@ -76,9 +76,9 @@ In the `marvin` block, two prompts, the same for every shop:
 | Prompt | Used when | Tools |
 |---|---|---|
 | `marvin_writer.v1.txt` | code ran the tool, FAQ, handoff, language, "thanks", photos | none |
-| `marvin_menu.v1.txt` | Marvin fills in the details (order, remove, show products, exact time) | only the branch's tools |
+| `marvin_menu.v1.txt` | Marvin fills in the details (products, remove, exact time) | only the branch's tools |
 
-Both are in the repo root. Shop data comes from placeholders: `{{COMPANY_NAME}}`, `{{CLIENT_NAME}}`, `{{SUPPORT_1}}`, `{{SUPPORT_2}}` (writer); `{{COMPANY_NAME}}`, `{{CLIENT_NAME}}`, `{{MENU_JSON}}`, `{{PICKUP_HOURS}}`, `{{DELIVERY_HOURS}}`, `{{LAST_ORDER_TODAY}}` (menu). There is no other prompt to fall back to: a missing or unreadable prompt gives the fallback reply (`fallback_reason: marvin_failed`). `marvin.prompts.main`, `shops`, `wine_specialist` and `writer_shops` are no longer used; `reminder` is still used by the reminder script.
+Both are in the repo root. Shop data comes from placeholders: `{{COMPANY_NAME}}`, `{{CLIENT_NAME}}`, `{{SUPPORT_1}}`, `{{SUPPORT_2}}` (writer); `{{COMPANY_NAME}}`, `{{MENU_JSON}}`, `{{PICKUP_HOURS}}`, `{{DELIVERY_HOURS}}`, `{{LAST_ORDER_TODAY}}` (menu; the customer's name goes in the note so the prompt cache is shared by all shoppers). There is no other prompt to fall back to: a missing or unreadable prompt gives the fallback reply (`fallback_reason: marvin_failed`). `marvin.prompts.main`, `shops`, `wine_specialist` and `writer_shops` are no longer used; `reminder` is still used by the reminder script.
 
 Optional: `"writer_model": "<claude model id>"` to word writer replies with another (e.g. cheaper) model than `marvin.model`.
 
@@ -92,8 +92,8 @@ Shop data is never copied into a flow: menu, branches, hours, shop name and supp
 ### Router branch
 
 ```json
-{ "id": "order", "do": "marvin", "tools": ["add_to_order", "change_logistics"],
-  "description": "Wants items put in the basket: names items to have, says yes to items Marvin just offered, …" }
+{ "id": "products", "do": "marvin", "tools": ["filter_products", "add_to_order", "change_logistics"],
+  "description": "Is about menu items: wants to see, know about or order products …" }
 ```
 
 | `do` | What happens |
