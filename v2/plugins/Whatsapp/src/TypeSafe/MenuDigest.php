@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Plugins\Whatsapp\TypeSafe;
 
+use Pmsrapi\V2\Exception\ApiException;
+use Pmsrapi\V2\Services\JsonService;
 use Pmsrapi\V2\Services\MenuService;
 
 /**
@@ -28,7 +30,47 @@ final class MenuDigest
 
     public function __construct(
         private readonly MenuService $menuService,
+        private readonly JsonService $json,
     ) {}
+
+    /**
+     * The menu's categories for "show me the menu": one line per top-level
+     * category with the sub-categories that have products, e.g.
+     * "Bowls: Fish, Meat, Vegan". Categories without products are left out.
+     * '' when the shop has no category data.
+     */
+    public function categoryOverview(): string
+    {
+        try {
+            $categories = $this->json->load('categories');
+        } catch (ApiException) {
+            return '';
+        }
+        $categories = array_values(array_filter(array_is_list($categories) ? $categories : ($categories['categories'] ?? []), 'is_array'));
+
+        $counts = [];
+        foreach ($this->menuService->index() as $product) {
+            $id = (int) ($product['category_id'] ?? 0);
+            $counts[$id] = ($counts[$id] ?? 0) + 1;
+        }
+
+        $lines = [];
+        foreach ($categories as $top) {
+            if (($top['parent_id'] ?? null) !== null) {
+                continue;
+            }
+            $children = array_values(array_map(
+                static fn(array $c): string => (string) $c['name'],
+                array_filter($categories, static fn(array $c): bool => (int) ($c['parent_id'] ?? 0) === (int) $top['id'] && isset($counts[(int) $c['id']])),
+            ));
+            if ($children === [] && !isset($counts[(int) $top['id']])) {
+                continue;
+            }
+            $lines[] = (string) $top['name'] . ($children !== [] ? ': ' . implode(', ', $children) : '');
+        }
+
+        return implode('; ', $lines);
+    }
 
     /**
      * Choice criteria for "which menu item": option key => description.
@@ -56,6 +98,25 @@ final class MenuDigest
         }
 
         return $options;
+    }
+
+    /**
+     * Name, price and a few words for these products, as JSON, for a note
+     * that asks the shopper which one they mean. '' when none are known.
+     *
+     * @param list<int> $productIds
+     */
+    public function facts(array $productIds): string
+    {
+        $items = $this->items();
+        $facts = [];
+        foreach ($productIds as $id) {
+            if (isset($items[$id])) {
+                $facts[] = ['name' => $items[$id]['name'], 'price' => $this->menuService->basePrice($id), 'about' => $items[$id]['about']];
+            }
+        }
+
+        return $facts === [] ? '' : (string) json_encode($facts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     /** "p11" -> 11, or null when the key is not a product on this menu. */

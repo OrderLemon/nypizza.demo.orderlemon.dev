@@ -62,8 +62,6 @@ final class WhatsappController
     /** TypeSafe's decision for this message (see decideWithTypeSafe()). */
     private ?Decision $typesafe = null;
 
-    /** Whether TypeSafe's decision was acted on, rather than Marvin deciding himself. */
-    private bool $typesafeHandled = false;
 
 
     public function __construct(
@@ -158,7 +156,7 @@ final class WhatsappController
             'typesafe' => $this->typesafe === null ? null : $this->typesafe->summary() + [
                 'use_marvin' => $this->typesafe->useMarvin(),
                 'do' => $this->typesafe->do,
-                'handled' => $this->typesafeHandled,
+                'outcome' => $this->typesafeHandler->outcome(),
             ],
         ], static fn(mixed $v): bool => $v !== null));
     }
@@ -180,22 +178,24 @@ final class WhatsappController
 
         $conversation = $this->transcripts->load($this->messagePayload["phone_number"]);
 
-        // TypeSafe's decision first; when code cannot act on it (or TypeSafe is
-        // unsure or unavailable) Marvin decides and replies as before.
-        $reply = $this->typesafe === null ? null : $this->typesafeHandler->reply(
-            $this->typesafe,
-            $conversation,
-            $this->messagePayload["full_name"],
-            $this->messagePayload["phone_number"],
-            $this->conversationLanguage,
-        );
-        $this->typesafeHandled = $reply !== null;
-
-        $reply ??= $this->marvin->reply(
-            $conversation,
-            $this->messagePayload["full_name"],
-            language: $this->conversationLanguage,
-        );
+        // TypeSafe decides; DecisionHandler always answers: code acts and Marvin
+        // words the result, or (nothing it can act on) Marvin without tools asks,
+        // replies kindly or says he cannot help, or (TypeSafe failed) a fixed
+        // "can't help right now". Marvin never decides or runs tools on his own.
+        $reply = $this->typesafe === null
+            ? $this->typesafeHandler->noText(
+                $conversation,
+                $this->messagePayload["full_name"],
+                $this->messagePayload["phone_number"],
+                $this->conversationLanguage,
+            )
+            : $this->typesafeHandler->reply(
+                $this->typesafe,
+                $conversation,
+                $this->messagePayload["full_name"],
+                $this->messagePayload["phone_number"],
+                $this->conversationLanguage,
+            );
 
         // detect_language may have run alongside another tool this turn (e.g.
         // a language switch noticed while also fetching the cart) — "type"

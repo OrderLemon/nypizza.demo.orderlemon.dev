@@ -1,6 +1,6 @@
 # TypeSafe in the WhatsApp plugin
 
-TypeSafe makes the **decisions** for each shopper message (what to do, which language, which FAQ, which menu item, size and quantity). Code **acts** on them through Marvin's existing tools. Marvin **writes** the reply. When TypeSafe is unsure or unavailable, Marvin handles the message exactly as before.
+TypeSafe makes the **decisions** for each shopper message (what to do, which language, which FAQ, which menu item, size and quantity). Code **acts** on them through Marvin's existing tools. Marvin only **writes** the reply: he never decides or runs tools on his own. When code cannot act on a decision, Marvin (without tools or menu) asks one clarifying question, replies kindly, or says he cannot help with this here and gives the team contacts. When TypeSafe fails, a fixed translated "can't help right now" is sent.
 
 ## Flow of one message
 
@@ -12,14 +12,17 @@ WhatsappController::receive()
       decideWithTypeSafe()  DecisionService::decide(): one TypeSafe call → Decision
       DecisionHandler::reply(Decision)    acts when confident, else null
         tool:<name>   → Marvin::replyWith(tool)       the tool runs first, Marvin replies from its result
+        show_products → one item: filter_products · "the menu": its categories · "something with chicken": matching items (2nd small call)
         order         → add_to_order (OrderSlots)      + change_logistics when "pickup/delivery asap"
         faq           → approved text (no Claude call), or Marvin answering only from facts / stores / a tool
         handoff       → Marvin with the handoff text and support contacts
         language      → detect_language
-      null → Marvin::reply()              exactly as before
+      nothing to act on → safe reply      Marvin, no tools/menu: asks, replies kindly, or says he can't help + team contacts
+      TypeSafe failed   → fixed reply     marvin_fallback text, translated, no AI
+      no text (photo)   → "I read text and voice messages"
 ```
 
-The webhook response has a `typesafe` field with the decision and `handled: true|false`, so every message can be checked from Postman.
+The webhook response has a `typesafe` field with the decision and `outcome`: `acted`, `safe`, `unavailable` or `no_text`.
 
 ## Classes (`src/TypeSafe/`)
 
@@ -56,7 +59,7 @@ Marvin gets one of two inputs:
 }
 ```
 
-Without a key the service still starts; every message then goes to Marvin as before (`reason: typesafe_not_configured`).
+Without a key the service still starts, but every message gets the fixed "can't help right now" reply (`outcome: unavailable`). `Marvin::reply()` (Marvin deciding on his own with the full prompt) is no longer used by the WhatsApp flow.
 
 In the `marvin` block:
 
@@ -145,6 +148,7 @@ docker compose exec app php /opt/pmsrapi/v2/plugins/Whatsapp/bin/reset_shopper.p
 | `typesafe: decision` | what TypeSafe decided (branch, confidence, item, options, tokens, seconds) |
 | `typesafe: running tool` / `adding to order` / `answering FAQ` / `handoff` / `switching language` | the handler acted |
 | `typesafe: not handled, using Marvin` | confident, but nothing to act on for that branch |
+| `typesafe: menu overview` / `showing matching products` / `matching products` | "show me the menu" / "something with chicken" handled |
 | `typesafe: decision failed, using Marvin` | TypeSafe error; `code` says which |
 | `marvin: seeded tool call` | Marvin replying from a tool TypeSafe ran |
 | `marvin: writer reply` / `writer tool call` | writer mode: which calls ran, prompt size, model |

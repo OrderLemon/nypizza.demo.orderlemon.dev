@@ -69,7 +69,7 @@ final class DecisionService
             $flow ??= $this->flows->forShop();
             [$questions, $maps] = $this->questions($flow, $state);
             $result = $this->client->ask($state, $questions);
-            $decision = $this->read($result, $flow, $maps);
+            $decision = $this->read($result, $flow, $maps, $state);
         } catch (TypeSafeException $e) {
             $this->logger->warning('typesafe: decision failed, using Marvin', [
                 'code'  => $e->errorCode(),
@@ -152,6 +152,16 @@ final class DecisionService
                     . 'about in `latest_message`? Use `history` when they refer to an item with this one, that '
                     . 'one, a number or a yes. Allow for typos and other languages.',
                 'criteria' => $items,
+            ],
+            'product_request' => [
+                'type' => 'choice',
+                'instructions' => self::CONTEXT . ' When the shopper asks to see products in `latest_message`, what do they ask for?',
+                'criteria' => [
+                    'overview' => 'The menu in general or what there is, without saying what kind',
+                    'matching' => 'Products that fit a description: an ingredient, diet, category, taste or price, such as something with chicken, vegan, drinks, the cheapest',
+                    'one_item' => 'One specific item they name or point to',
+                    'none' => 'They do not ask to see products',
+                ],
             ],
             'quantity' => [
                 'type' => 'choice',
@@ -250,8 +260,69 @@ final class DecisionService
 
     // ---------------------------------------------------------------- answers
 
+    /**
+     * Menu items that match what the shopper asked to see ("something with
+     * chicken", "vegan", "drinks"), best first, at most $max: a second, small
+     * call with one yes/no question per candidate. Candidates are the items the
+     * first call found most likely; when it spread almost nothing over the
+     * items, every item is checked. Null when TypeSafe is unavailable.
+     *
+     * @return list<int>|null product ids
+     */
+    public function matchingProducts(Decision $decision, int $max = 5): ?array
+    {
+        $items = $this->menu->items();
+        $candidates = array_slice(array_keys($decision->itemProbabilities), 0, 15);
+        if (array_sum(array_slice($decision->itemProbabilities, 0, 15)) < 0.05 || $candidates === []) {
+            $candidates = array_slice(array_keys($items), 0, 120);
+        }
+
+        $questions = [];
+        foreach ($candidates as $id) {
+            if (!isset($items[$id])) {
+                continue;
+            }
+            $questions["p{$id}"] = [
+                'type' => 'noul',
+                'instructions' => 'Does the shopper in `latest_message` ask to see products like this one: '
+                    . $items[$id]['name'] . ($items[$id]['about'] !== '' ? ': ' . $items[$id]['about'] : '')
+                    . '? Yes only when it fits what they describe, such as an ingredient, diet, category, taste or price.',
+            ];
+        }
+        if ($questions === []) {
+            return null;
+        }
+
+        try {
+            $result = $this->client->ask([
+                'latest_message' => $decision->state['latest_message'] ?? '',
+                'history' => $decision->state['history'] ?? [],
+            ], $questions);
+        } catch (TypeSafeException $e) {
+            $this->logger->warning('typesafe: matching products failed', ['code' => $e->errorCode()]);
+
+            return null;
+        }
+
+        $yes = [];
+        foreach ($questions as $key => $_) {
+            $p = (float) $result->noul($key)->noul;
+            if ($p >= 0.5) {
+                $yes[(int) substr($key, 1)] = $p;
+            }
+        }
+        arsort($yes);
+        $ids = array_slice(array_keys($yes), 0, $max);
+
+        $this->logger->info('typesafe: matching products', [
+            'checked' => count($questions), 'matched' => count($yes), 'tokens' => $result->inputTokens + $result->outputTokens,
+        ]);
+
+        return $ids;
+    }
+
     /** @param array<string, array<string, string>> $maps */
-    private function read(TypeSafeResult $result, Flow $flow, array $maps): Decision
+    private function read(TypeSafeResult $result, Flow $flow, array $maps, array $state): Decision
     {
         $route = $result->choice('route');
         $branch = $flow->branch($route->choice);
@@ -265,6 +336,15 @@ final class DecisionService
         $logistics = $result->choice('logistics');
 
         $productId = $this->menu->productId($item->choice);
+        $itemProbabilities = [];
+        foreach ($item->probabilities as $option => $probability) {
+            $id = $this->menu->productId((string) $option);
+            if ($id !== null) {
+                $itemProbabilities[$id] = (float) $probability;
+            }
+        }
+        arsort($itemProbabilities);
+        $productRequest = $result->has('product_request') ? $result->choice('product_request') : null;
         $itemKind = match (true) {
             $productId !== null          => Decision::ITEM_ONE,
             $item->choice === 'several'  => Decision::ITEM_SEVERAL,
@@ -312,6 +392,10 @@ final class DecisionService
             modification: (float) $result->noul('modification')->noul,
             orderTime: $time->choice === 'not_mentioned' ? null : $time->choice,
             logistics: $logistics->choice === 'not_mentioned' ? null : $logistics->choice,
+            productRequest: $productRequest === null || $productRequest->choice === 'none' ? null : $productRequest->choice,
+            productRequestConfidence: (float) ($productRequest?->confidence ?? 0.0),
+            itemProbabilities: $itemProbabilities,
+            state: $state,
             basketLineId: $lineId,
             basketLineQuantity: $lineId === null || !isset($basketQuantities[$lineId]) ? null : (int) $basketQuantities[$lineId],
             basketLineConfidence: (float) ($line?->confidence ?? 0.0),

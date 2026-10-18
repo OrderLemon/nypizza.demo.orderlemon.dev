@@ -110,7 +110,8 @@ final class WhatsappPlugin extends AbstractPlugin
         ));
 
         $registrar->singleton(MenuDigest::class, static fn(Container $c): MenuDigest => new MenuDigest(
-            $c->get(MenuService::class)
+            $c->get(MenuService::class),
+            $c->get(JsonService::class),
         ));
 
         $registrar->singleton(StateBuilder::class, static fn(Container $c): StateBuilder => new StateBuilder(
@@ -168,6 +169,8 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(Marvin::class),
             $c->get(FlowLoader::class),
             $c->get(OrderSlots::class),
+            $c->get(DecisionService::class),
+            $c->get(MenuDigest::class),
             $c->get(JsonService::class),
             $c->get(ShopService::class),
             $c->get(Config::class),
