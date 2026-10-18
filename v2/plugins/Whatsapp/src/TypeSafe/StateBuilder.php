@@ -28,8 +28,8 @@ use Pmsrapi\V2\Services\OrderQueryService;
  * CartService::withItemsAndTotal() (which writes the total back) or
  * openCart() (which creates a cart).
  *
- * The menu is not part of the state; MenuDigest puts it in the menu_item
- * question, so it is sent once.
+ * The menu is not part of the state: TypeSafe decides what to do, Marvin
+ * reads which items with the full menu.
  */
 final class StateBuilder
 {
