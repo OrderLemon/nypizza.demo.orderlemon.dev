@@ -254,7 +254,13 @@ final class Marvin
                     $this->tools->definitions(),
                     static fn(array $d): bool => in_array($d['name'] ?? '', $allowed, true),
                 ));
-                $messages = $this->noteOnShopper($messages, (string) ($seed['note'] ?? ''));
+                // The name goes in the note, not the prompt: the prompt (with the
+                // menu) stays the same for every shopper, so its cache is shared.
+                $name     = trim($this->clientName);
+                $messages = $this->noteOnShopper($messages, $this->join(
+                    $name === '' ? '' : "The customer's name is {$name}.",
+                    (string) ($seed['note'] ?? ''),
+                ));
                 $this->logger->info('marvin: reply with tools', ['tools' => $allowed]);
             } else {
                 throw new ApiException("Unknown reply mode: {$seed['mode']}");
@@ -650,9 +656,10 @@ final class Marvin
     {
         $override = $this->setting('fallback', null);
 
-        $supps = $this->config->secret("support");
-
-        [$support1, $support2] = array_values($supps);
+        // The last-resort reply must never fail itself: any number of contacts.
+        $supps = array_values(array_map('strval', (array) $this->config->secret("support", [])));
+        $support1 = $supps[0] ?? '';
+        $support2 = $supps[1] ?? $support1;
 
         if (is_string($override) && trim($override) !== '') {
             return $override;
@@ -852,6 +859,11 @@ final class Marvin
         }
 
         return $messages;
+    }
+
+    private function join(string ...$parts): string
+    {
+        return implode(' ', array_filter(array_map('trim', $parts), static fn(string $p): bool => $p !== ''));
     }
 
     private function noteText(string $note): string

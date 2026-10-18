@@ -1,6 +1,6 @@
 {
   "settings": {
-    "threshold": 0.6,
+    "threshold": 0.5,
     "history_turns": 4
   },
   "languages": {
@@ -23,21 +23,14 @@
       "description": "Only a greeting such as hi, hoi, hallo, hello, merhaba or good evening, with nothing else asked or ordered"
     },
     {
-      "id": "show_products",
+      "id": "products",
       "do": "marvin",
       "tools": [
-        "filter_products"
-      ],
-      "description": "Wants to see or know about menu items before choosing: asks for the menu, a category (sides, drinks, bowls), items that fit a wish (with chicken, vegan, spicy, cheap, popular), or what a named item is, contains or costs. Not when they already say they want it"
-    },
-    {
-      "id": "order",
-      "do": "marvin",
-      "tools": [
+        "filter_products",
         "add_to_order",
         "change_logistics"
       ],
-      "description": "Wants items put in the basket: names items to have (I'll take, 2x, one more, also a drink), says yes to items Marvin just offered, or answers Marvin's question about an item being ordered (which size, base, sauce or which one)"
+      "description": "Is about menu items: wants to see, know about or order products. Asks what there is, for the menu or a category (sides, drinks, bowls), whether they have something, what an item is, contains or costs, items that fit a wish (with chicken, vegan, spicy, cheap), or the food in general (is the chicken halal, is it organic, gluten-free options); or wants to order or start ordering, even without naming anything yet (I want to order, ik wil bestellen, I'd like, I also want, give me, 2x, one more, add), says yes to items Marvin just offered, or answers Marvin's question about an item (which size, base, sauce or which one)"
     },
     {
       "id": "remove",
@@ -56,7 +49,7 @@
     {
       "id": "checkout",
       "do": "tool:checkout_order",
-      "description": "Is done choosing and wants to finish and pay: checkout, that's all, pay, send the link"
+      "description": "The basket already has items and they are done choosing: want to finish and pay (that's all, checkout, pay, send the link, afrekenen), or say yes to Marvin's question whether to finish the order. Never when the basket is empty"
     },
     {
       "id": "logistics",
@@ -84,13 +77,13 @@
     {
       "id": "faq",
       "do": "faq",
-      "description": "Asks about the shop rather than about menu items: opening hours, whether it is open now, locations and addresses, delivery area, payment methods, the shop's story or how it works, or its food in general (halal, organic, where ingredients come from)"
+      "description": "Asks one of the shop's own questions listed here"
     },
     {
       "id": "handoff",
       "do": "handoff",
       "description": "Wants something only staff can do: money back, a refund, a discount, a price correction, or complains about an order they already received",
-      "instructions": "Apologise once and show understanding. Say you cannot change prices or send money yourself, and give them the team contacts from the facts. Do not argue about the price and do not promise that someone will contact them."
+      "instructions": "Apologise once and show understanding. Say you cannot arrange this in this chat, and that you cannot change prices or send money. Do not argue about the price and do not promise that someone will contact them."
     },
     {
       "id": "no_action",
@@ -126,12 +119,12 @@
   },
   "texts": {
     "handoff.answer": {
-      "en": "I can't arrange that myself. Please contact our team directly: {{SUPPORT_1}} or {{SUPPORT_2}}",
-      "nl": "Dat kan ik zelf niet regelen. Neem direct contact op met ons team: {{SUPPORT_1}} of {{SUPPORT_2}}",
-      "tr": "Bunu kendim ayarlayamam. Lütfen doğrudan ekibimizle iletişime geçin: {{SUPPORT_1}} veya {{SUPPORT_2}}",
-      "es": "No puedo encargarme de eso yo mismo. Contacta directamente con nuestro equipo: {{SUPPORT_1}} o {{SUPPORT_2}}",
-      "de": "Das kann ich nicht selbst regeln. Bitte wende dich direkt an unser Team: {{SUPPORT_1}} oder {{SUPPORT_2}}",
-      "fr": "Je ne peux pas m'en occuper moi-même. Contactez directement notre équipe : {{SUPPORT_1}} ou {{SUPPORT_2}}"
+      "en": "Sorry, I can't arrange that in this chat.",
+      "nl": "Sorry, dat kan ik in deze chat niet regelen.",
+      "tr": "Üzgünüm, bunu bu sohbette ayarlayamam.",
+      "es": "Lo siento, no puedo encargarme de eso en este chat.",
+      "de": "Entschuldigung, das kann ich in diesem Chat nicht regeln.",
+      "fr": "Désolé, je ne peux pas m'en occuper dans ce chat."
     }
   }
 }

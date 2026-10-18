@@ -74,12 +74,12 @@ final class LanguageHelper
             'fr' => "Désolé, je ne peux pas traiter votre message vocal pour le moment. Pourriez-vous plutôt l'écrire ?",
         ],
         'marvin_fallback' => [
-            'en' => "Sorry, I can't help you with this right now. Our team can: {{SUPPORT_1}} or {{SUPPORT_2}}",
-            'nl' => 'Sorry, hier kan ik je nu niet mee helpen. Ons team wel: {{SUPPORT_1}} of {{SUPPORT_2}}',
-            'tr' => 'Üzgünüm, şu anda bu konuda sana yardımcı olamıyorum. Ekibimiz yardımcı olabilir: {{SUPPORT_1}} veya {{SUPPORT_2}}',
-            'es' => 'Lo siento, ahora mismo no puedo ayudarte con esto. Nuestro equipo sí: {{SUPPORT_1}} o {{SUPPORT_2}}',
-            'de' => 'Entschuldigung, dabei kann ich dir gerade nicht helfen. Unser Team schon: {{SUPPORT_1}} oder {{SUPPORT_2}}',
-            'fr' => "Désolé, je ne peux pas t'aider avec ça pour le moment. Notre équipe peut le faire : {{SUPPORT_1}} ou {{SUPPORT_2}}",
+            'en' => "Sorry, I can't help you with this at the moment.",
+            'nl' => 'Sorry, hier kan ik je op dit moment niet mee helpen.',
+            'tr' => 'Üzgünüm, şu anda bu konuda sana yardımcı olamıyorum.',
+            'es' => 'Lo siento, en este momento no puedo ayudarte con esto.',
+            'de' => 'Entschuldigung, dabei kann ich dir im Moment nicht helfen.',
+            'fr' => "Désolé, je ne peux pas t'aider avec ça pour le moment.",
         ],
         'track_order' => [
             'en' => 'Track my order',

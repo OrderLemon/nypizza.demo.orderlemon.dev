@@ -177,6 +177,16 @@ final class WhatsappController
         // shopper and location replies never ask TypeSafe.
         $this->decideWithTypeSafe();
 
+        // A shopper who writes a real sentence in another supported language
+        // switches to it, so buttons and captions follow (no extra call).
+        if ($this->typesafe !== null) {
+            $switch = $this->languageDetector->switchTo($this->typesafe, (string) ($this->messagePayload["message"] ?? ''), $this->conversationLanguage);
+            if ($switch !== null) {
+                $this->conversationLanguage = $switch;
+                $this->saveLanguage($switch);
+            }
+        }
+
         $conversation = $this->transcripts->load($this->messagePayload["phone_number"]);
 
         // TypeSafe decides; DecisionHandler always answers: code runs the tool and
@@ -1120,23 +1130,29 @@ final class WhatsappController
             $this->logger->info("detected language", $detected + ["message" => $this->messagePayload["message"]]);
 
             if ($detected["save"]) {
-                //update the clients table. Otherwise a running script will
-                //update the clients_data with the wrong language set in clients
-                $this->clientService->upsertClients(
-                    $this->messagePayload["phone_number"],
-                    [
-                        "full_name" => $this->messagePayload["full_name"],
-                        "language" => $this->conversationLanguage,
-                    ]);
-
-                $this->clientService->upsertClientData(
-                    $this->messagePayload["phone_number"],
-                    [
-                        "language" => $this->conversationLanguage,
-                    ]);
+                $this->saveLanguage($this->conversationLanguage);
             }
         }
 
+    }
+
+    /** Save the shopper's language in clients and clients_data. */
+    private function saveLanguage(string $language) : void
+    {
+        //update the clients table. Otherwise a running script will
+        //update the clients_data with the wrong language set in clients
+        $this->clientService->upsertClients(
+            $this->messagePayload["phone_number"],
+            [
+                "full_name" => $this->messagePayload["full_name"],
+                "language" => $language,
+            ]);
+
+        $this->clientService->upsertClientData(
+            $this->messagePayload["phone_number"],
+            [
+                "language" => $language,
+            ]);
     }
 
     private function isAssortment() : bool

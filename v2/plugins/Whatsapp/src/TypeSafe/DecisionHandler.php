@@ -30,17 +30,18 @@ use Pmsrapi\V2\Support\Logger;
  * By the branch's "do":
  *   tool:<name>  code runs the tool; tool:change_logistics only for "as soon
  *                as possible", otherwise Marvin with the branch's tools
- *   marvin       Marvin with only the branch's tools (order, remove, show products)
+ *   marvin       Marvin with only the branch's tools (products, remove)
  *   reply        nothing to do: Marvin writes one kind line, no tools
- *   language     detect_language with the requested language
- *   faq          by the FAQ entry's type:
+ *   language     detect_language with the requested language; not clear which:
+ *                Marvin asks, naming the languages he writes
+ *   faq          by the FAQ entry's type (no entry matches: Marvin says this
+ *                chat has no information on it):
  *                  answer       the approved text, sent as is when it exists in
  *                               the shopper's language (no Claude call)
  *                  facts        Marvin answers only from these facts
  *                  answer_from  Marvin answers only from shop data (stores)
  *                  do           the tool runs, Marvin replies from its result
- *   handoff      Marvin, with the branch instructions, the handoff text and the
- *                support contacts
+ *   handoff      Marvin, with the branch instructions and the handoff text
  *   fallback     the fallback reply
  */
 final class DecisionHandler
@@ -152,8 +153,14 @@ final class DecisionHandler
         $this->outcome = 'no_text';
         $this->fallbackReason = null;
 
-        return $this->marvin->replyWith($conversation, $clientName, $phone, $language, [],
+        $reply = $this->marvin->replyWith($conversation, $clientName, $phone, $language, [],
             'The shopper sent something without text, like a photo or a sticker. Say in one line that you can read text and voice messages, and ask what they would like.');
+        if (($reply['type'] ?? null) === Marvin::FALLBACK_SOURCE) {
+            $this->outcome = 'fallback';
+            $this->fallbackReason = 'marvin_failed';
+        }
+
+        return $reply;
     }
 
     /** acted, marvin_tools, fallback or no_text, for the webhook response. */
@@ -224,10 +231,15 @@ final class DecisionHandler
     {
         $requested = $decision->requestedLanguage;
 
-        // "other" is a language the shop does not list: the fallback reply.
-        if ($requested === null || !in_array($requested, $this->flows->forShop()->languages(), true)
+        // Not clear which language, or one the shop does not list: say which ones he speaks.
+        $languages = $this->flows->forShop()->languages();
+        if ($requested === null || !in_array($requested, $languages, true)
             || !$decision->isConfident($decision->requestedLanguageConfidence)) {
-            return null;
+            $this->logger->info('typesafe: language not clear', ['requested' => $requested]);
+
+            return $reply([], $this->note($decision, instructions: 'They asked about the language of this chat, but it is not clear '
+                . 'which supported language they want. You can write in these languages, by ISO code: ' . implode(', ', $languages)
+                . '. Name them in plain words and ask which one they would like, in one short message.'));
         }
 
         $this->logger->info('typesafe: switching language', ['language' => $requested]);
@@ -241,7 +253,12 @@ final class DecisionHandler
         $flow = $this->flows->forShop();
         $entry = $decision->faq === null ? null : $flow->faqEntry($decision->faq);
         if ($entry === null || !$decision->isConfident($decision->faqConfidence)) {
-            return null;
+            // A shop question with no answer here: say so and point to the team,
+            // in context, instead of the general fallback. Logged so a FAQ can be added.
+            $this->logger->warning('typesafe: faq without answer', ['faq' => $decision->faq, 'conf' => round($decision->faqConfidence, 2)]);
+
+            return $reply([], $this->note($decision, instructions:
+                'This chat has no information about what they asked. Say so plainly in one line, without guessing.'));
         }
 
         $instructions = $this->join($decision->instructions, $entry['instructions'] ?? null, $this->ask($entry, $language));
