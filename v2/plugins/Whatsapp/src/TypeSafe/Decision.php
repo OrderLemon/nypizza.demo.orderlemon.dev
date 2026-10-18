@@ -15,8 +15,8 @@ namespace Plugins\Whatsapp\TypeSafe;
  *   faq           matching FAQ id (null when none)
  *   order slots   product, config options (size, base, …), quantity,
  *                 ingredient change, order time, pickup/delivery
- *   basket line   which basket line the message is about, and how many of
- *                 it to remove (null: all of it); only when the basket has lines
+ *   remove lines  the basket lines to take out and how many units of each
+ *                 (null: all of it); only when the basket has lines
  *
  * A fallback decision (TypeSafe or data unavailable) has $ok = false and a
  * reason; useMarvin() is then true and the message goes to Marvin as before.
@@ -30,6 +30,9 @@ final readonly class Decision
     /**
      * @param array<string, float>                                        $branchProbabilities
      * @param array<string, array{option: ?string, confidence: float}>     $options config group label => chosen option
+     * @param list<array{line_id: int, quantity: int, remove: ?int, p: float}> $removeLines
+     *        basket lines to take out: how many units the line has, how many to
+     *        remove (null: all), and how sure TypeSafe is
      * @param array<int, float>   $itemProbabilities product id => probability from the menu_item question
      * @param array<string, mixed> $state             the state TypeSafe decided on, for follow-up questions
      */
@@ -57,10 +60,7 @@ final readonly class Decision
         public float $modification = 0.0,
         public ?string $orderTime = null,
         public ?string $logistics = null,
-        public ?int $basketLineId = null,
-        public ?int $basketLineQuantity = null,
-        public float $basketLineConfidence = 0.0,
-        public ?int $removeCount = null,
+        public array $removeLines = [],
         public ?string $productRequest = null,
         public float $productRequestConfidence = 0.0,
         public array $itemProbabilities = [],
@@ -133,8 +133,7 @@ final readonly class Decision
             'modify'     => $this->wantsModification() ?: null,
             'time'       => $this->orderTime,
             'logistics'  => $this->logistics,
-            'line'       => $this->basketLineId,
-            'remove'     => $this->removeCount,
+            'remove'     => $this->removeLines === [] ? null : array_column($this->removeLines, 'remove', 'line_id'),
             'products'   => $this->productRequest,
             'tokens'     => $this->tokens,
             'seconds'    => round($this->seconds, 2),

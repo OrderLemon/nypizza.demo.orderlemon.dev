@@ -13,7 +13,7 @@ use Pmsrapi\V2\Services\MenuService;
  *   add_to_order      {product_id, quantity, option_ids}
  *   change_logistics  {logistics_type, date: "asap"}
  *   filter_products   {product_ids: [one product]}
- *   remove_from_order {line_id, keep?}
+ *   remove_from_order {line_id, keep?}, one per basket line
  *
  * TypeSafe answers in option labels per config group ("Size" => "Large (40cm)");
  * here they are matched to the chosen product's own option ids. A label the
@@ -81,25 +81,24 @@ final class OrderSlots
     }
 
     /**
-     * remove_from_order input when TypeSafe is confident about one basket line.
-     * Without a number, or with at least as many as the line has, the whole
-     * line goes; otherwise "keep" is what is left.
+     * remove_from_order input for every basket line TypeSafe says is to be
+     * taken out. Without a number, or with at least as many as the line has,
+     * the whole line goes; otherwise "keep" is what is left.
      *
-     * @return array{line_id: int, keep?: int}|null
+     * @return list<array{line_id: int, keep?: int}>
      */
-    public function removeFromOrder(Decision $decision): ?array
+    public function removeLines(Decision $decision): array
     {
-        if ($decision->basketLineId === null || !$decision->isConfident($decision->basketLineConfidence)) {
-            return null;
+        $inputs = [];
+        foreach ($decision->removeLines as $line) {
+            $input = ['line_id' => $line['line_id']];
+            if ($line['remove'] !== null && $line['remove'] < $line['quantity']) {
+                $input['keep'] = $line['quantity'] - $line['remove'];
+            }
+            $inputs[] = $input;
         }
 
-        $input = ['line_id' => $decision->basketLineId];
-        if ($decision->removeCount !== null && $decision->basketLineQuantity !== null
-            && $decision->removeCount < $decision->basketLineQuantity) {
-            $input['keep'] = $decision->basketLineQuantity - $decision->removeCount;
-        }
-
-        return $input;
+        return $inputs;
     }
 
     /**
