@@ -23,6 +23,7 @@ use Plugins\Whatsapp\AI\MarvinTools;
 use Plugins\Whatsapp\AI\ShopBackground;
 use Plugins\Whatsapp\AI\CheckoutUpsell;
 use Plugins\Whatsapp\AI\CampaignNudge;
+use Plugins\Whatsapp\AI\ItemDraft;
 use Pmsrapi\V2\Services\TrackingService;
 use Pmsrapi\V2\Services\ClientService;
 use Pmsrapi\V2\Services\ConversationService;
@@ -76,6 +77,14 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(ShopBackground::class),
             $c->get(CheckoutUpsell::class),
             $c->get(ShopService::class),
+            $c->get(ItemDraft::class),
+        ));
+
+        $registrar->singleton(ItemDraft::class, static fn(Container $c): ItemDraft => new ItemDraft(
+            $c->get(RedisClient::class),
+            $c->get(MenuService::class),
+            $c->get(Config::class),
+            $c->get(Logger::class),
         ));
 
         $registrar->singleton(CheckoutUpsell::class, static fn(Container $c): CheckoutUpsell => new CheckoutUpsell(
@@ -117,6 +126,7 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(ChatTranscriptService::class),
             $c->get(Repository::class),
             $c->get(OrderQueryService::class),
+            $c->get(ItemDraft::class),
             $c->get(Config::class),
         ));
 
@@ -166,6 +176,7 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(Marvin::class),
             $c->get(FlowLoader::class),
             $c->get(OrderSlots::class),
+            $c->get(ItemDraft::class),
             $c->get(JsonService::class),
             $c->get(ShopService::class),
             $c->get(Config::class),

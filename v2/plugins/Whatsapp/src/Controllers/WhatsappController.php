@@ -155,7 +155,8 @@ final class WhatsappController
             'reply' => $reply,
             'typesafe' => $this->typesafe === null ? null : $this->typesafe->summary() + [
                 'do' => $this->typesafe->do,
-                'tools' => $this->typesafe->tools,
+                'allowed_tools' => $this->typesafe->tools,
+                'called_tools' => $this->typesafeHandler->calledTools(),
                 'outcome' => $this->typesafeHandler->outcome(),
                 'fallback_reason' => $this->typesafeHandler->fallbackReason(),
             ],

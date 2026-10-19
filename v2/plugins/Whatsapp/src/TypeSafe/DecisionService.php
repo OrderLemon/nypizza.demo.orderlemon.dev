@@ -29,7 +29,8 @@ final class DecisionService
         . 'of a shop; `latest_message` is the shopper\'s new message (button taps arrive as their label, voice '
         . 'notes as their transcript). `basket` is what is in the shopper\'s basket now, `active_order` whether '
         . 'an earlier order is placed and on its way, `checkout_link_sent` whether Marvin already sent a payment '
-        . 'link for this basket.';
+        . 'link for this basket, `item_in_progress` (when present) a product Marvin is building with the shopper '
+        . 'and the choices it is waiting for: short answers like a choice, no thanks or that\'s it are about it.';
 
     private const array LANGUAGE_NAMES = [
         'en' => 'English', 'nl' => 'Dutch', 'tr' => 'Turkish', 'es' => 'Spanish', 'de' => 'German',
@@ -217,6 +218,7 @@ final class DecisionService
             logistics: $logistics->choice === 'not_mentioned' ? null : $logistics->choice,
             tokens: $result->inputTokens + $result->outputTokens,
             seconds: $result->seconds,
+            minLead: $flow->minLead(),
         );
     }
 }

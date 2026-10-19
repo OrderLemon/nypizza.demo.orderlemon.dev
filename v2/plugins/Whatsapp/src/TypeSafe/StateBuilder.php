@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Plugins\Whatsapp\TypeSafe;
 
+use Plugins\Whatsapp\AI\ItemDraft;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Database\Repository;
 use Pmsrapi\V2\Exception\ApiException;
@@ -53,6 +54,7 @@ final class StateBuilder
         private readonly ChatTranscriptService $transcripts,
         private readonly Repository $repo,
         private readonly OrderQueryService $orders,
+        private readonly ItemDraft $drafts,
         Config $config,
     ) {
         $this->historyTurns = max(0, (int) $config->secret('typesafe.history_turns', 4));
@@ -64,7 +66,8 @@ final class StateBuilder
      *   history: list<array{from: string, text: string}>,
      *   basket: list<array{line_id: int, item: string, quantity: int, options: list<string>}>,
      *   active_order: array{on_its_way: bool, count: int},
-     *   checkout_link_sent: bool
+     *   checkout_link_sent: bool,
+     *   item_in_progress?: array{item: string, product_id: int, chosen: list<string>, waiting_for: list<string>}
      * }
      */
     public function build(string $phone, string $latestMessage, ?int $historyTurns = null): array
@@ -75,13 +78,22 @@ final class StateBuilder
 
         $activeOrders = $this->orders->activeOrdersFor($phone, ['status_id' => self::CHECKED_OUT_STATUS_ID]);
 
-        return [
+        $state = [
             'latest_message'     => $this->cut($latestMessage, self::MESSAGE_MAX),
             'history'            => $this->history($messages, $latestMessage, $turns),
             'basket'             => $this->basket($phone),
             'active_order'       => ['on_its_way' => $activeOrders !== [], 'count' => count($activeOrders)],
             'checkout_link_sent' => $this->checkoutLinkSent($messages),
         ];
+
+        // A product being built over several messages (ItemDraft): short answers
+        // like "salmon" or "no thanks" are answers about it.
+        $draft = $this->drafts->summary($phone);
+        if ($draft !== null) {
+            $state['item_in_progress'] = $draft;
+        }
+
+        return $state;
     }
 
     /** @return list<array<string, mixed>> */

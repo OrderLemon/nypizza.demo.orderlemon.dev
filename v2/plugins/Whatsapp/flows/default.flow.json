@@ -1,7 +1,8 @@
 {
   "settings": {
     "threshold": 0.5,
-    "history_turns": 4
+    "history_turns": 4,
+    "min_lead": 0.15
   },
   "languages": {
     "default": "en",
@@ -20,7 +21,8 @@
     {
       "id": "greeting",
       "do": "tool:greet_with_usual",
-      "description": "Only a greeting such as hi, hoi, hallo, hello, merhaba or good evening, with nothing else asked or ordered"
+      "description": "Only a greeting such as hi, hoi, hallo, hello, merhaba or good evening, with nothing else asked or ordered",
+      "instructions": "Only greet: one line introducing yourself, then ask how you can help. Never mention their usual, last or current order, the basket or anything from the result: buttons for that are added automatically."
     },
     {
       "id": "products",
@@ -28,9 +30,10 @@
       "tools": [
         "filter_products",
         "add_to_order",
-        "change_logistics"
+        "change_logistics",
+        "get_cart"
       ],
-      "description": "Is about menu items: wants to see, know about or order products. Asks what there is, for the menu or a category (sides, drinks, bowls), whether they have something, what an item is, contains or costs, items that fit a wish (with chicken, vegan, spicy, cheap), or the food in general (is the chicken halal, is it organic, gluten-free options); or wants to order or start ordering, even without naming anything yet (I want to order, ik wil bestellen, I'd like, I also want, give me, 2x, one more, add), says yes to items Marvin just offered, or answers Marvin's question about an item (which size, base, sauce or which one)"
+      "description": "Is about menu items: wants to see, know about or order products. Asks what there is, for the menu or a category (sides, drinks, bowls), whether they have something, what an item is, contains or costs, items that fit a wish (with chicken, vegan, spicy, cheap), or the food in general (is the chicken halal, is it organic, gluten-free options); or wants to order or start ordering, even without naming anything yet (I want to order, ik wil bestellen, I'd like, I also want, give me, 2x, one more, add), says yes to items Marvin just offered, or answers Marvin's question about an item or the item being built (which size, base, protein, sauce, toppings or which one, including no thanks, that's it or finish it), or no longer wants the item being built, or wants to change an item already in the basket (add or drop an option, swap the base or size: add corn to the bowl, make it quinoa, no cucumber)"
     },
     {
       "id": "remove",
@@ -39,7 +42,7 @@
         "get_cart",
         "remove_from_order"
       ],
-      "description": "Wants items taken out of the basket or fewer of them: remove, delete, cancel the salad, only one instead of two"
+      "description": "Wants whole items taken out of the basket or fewer of them: remove, delete, cancel the salad, only one instead of two. Not taking one option off an item (no cucumber on the bowl)"
     },
     {
       "id": "view_cart",
@@ -49,7 +52,7 @@
     {
       "id": "checkout",
       "do": "tool:checkout_order",
-      "description": "The basket already has items and they are done choosing: want to finish and pay (that's all, checkout, pay, send the link, afrekenen), or say yes to Marvin's question whether to finish the order. Never when the basket is empty"
+      "description": "The basket already has items and they are done choosing: want to pay or get the order link (that's all, checkout, pay, send the link, afrekenen), or say yes to Marvin's question whether to finish the order. Never when the basket is empty. While an item is being built (item_in_progress), finish it or that's it means finishing that item, not this"
     },
     {
       "id": "logistics",
@@ -88,7 +91,7 @@
     {
       "id": "no_action",
       "do": "reply",
-      "description": "Needs nothing done: says thanks, ok, great or bye, says they will think about it or are busy, or only reacts with an emoji"
+      "description": "Needs nothing done: says thanks, ok, great or bye, says they will think about it or are busy, or only reacts with an emoji. Not an answer to Marvin's question about an item being built"
     },
     {
       "id": "unclear",

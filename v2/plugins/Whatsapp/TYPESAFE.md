@@ -4,6 +4,7 @@
 
 - **Code runs** the tool when the decision is complete (basket, checkout, tracking, hours, language, pickup/delivery "as soon as possible"…). Marvin only words the result: short writer prompt, no tools.
 - **Marvin fills in the details** when the decision needs something only he can read from the message: which items, how many, an exact time. He gets the full menu but **only the tools the branch allows** (`products` → `filter_products`, `add_to_order`, `change_logistics`; `remove` → `get_cart`, `remove_from_order`). Any other tool call is blocked and logged.
+- **Sure enough** means TypeSafe's confidence is at least `settings.threshold` (0.5), or the top branch is at least threshold − 0.1 and leads the second by `settings.min_lead` (0.15), as with a "yes" only one reading fits.
 - **Fallback:** when TypeSafe is down or not sure, the branch is `unclear`, or there is nothing to run, the shopper gets the fixed translated fallback text, "Sorry, I can't help you with this at the moment." (no AI call), and the reason is logged.
 
 ## Flow of one message
@@ -25,7 +26,7 @@ WhatsappController::receive()
       unsure / down / unclear / nothing to run → fixed fallback reply + log "typesafe: fallback"
 ```
 
-The webhook response has a `typesafe` field with the decision, the allowed `tools`, `outcome` (`acted`, `marvin_tools`, `fallback` or `no_text`) and `fallback_reason`.
+The webhook response has a `typesafe` field with the decision, `allowed_tools` (what Marvin may use for the branch), `called_tools` (what actually ran), `outcome` (`acted`, `marvin_tools`, `fallback` or `no_text`) and `fallback_reason`.
 
 ## Classes (`src/TypeSafe/`)
 
@@ -48,6 +49,24 @@ Marvin gets one of two inputs:
 - **`Marvin::replyWithTools($tools, $note)`, when he fills in the details.** Full prompt and menu, but only `$tools`. The note says what TypeSafe decided and to ask (not guess) when something needed is not said. He may answer without a tool call when he has to ask ("which pizza?"); that is logged as `marvin: no tool called`.
 
 `Marvin::reply()` (Marvin with all tools, deciding himself) is not used by the WhatsApp flow.
+
+## Building an item with options
+
+Products with option groups are built over several messages by `add_to_order`, which keeps a **draft** in Redis per shop and phone (`ItemDraft`; expires after 15 minutes without an answer, `marvin.draft_ttl` in seconds):
+
+| Product | What happens |
+|---|---|
+| no groups | added at once |
+| only required groups (pizza: size, crust) | `needs_options`: all required groups asked in one message → added when chosen |
+| required + optional (Build Your Own Bowl) | required first, all at once → then each optional group once (`ask_optional`: "How about toppings? You can add: …") → added when the last one is answered or declined |
+
+- Each call only carries the new option ids; earlier choices are kept. A new pick in a single-choice group replaces the old one, multiple-choice picks add up.
+- `skip_optional`: no thanks to the group just offered. `no_more_options`: add it now. `discard`: forget the item.
+- **Changing an item already in the basket** ("add corn to the bowl", "make it quinoa", "no cucumber"): `change_existing` with only the change (`option_ids` to add or swap in, `remove_option_ids` to take out). Code reads the line's current options, applies the change and replaces the line with the same quantity in one cart update; the latest line of that product, or `line_id`. A change that would leave a required choice empty changes nothing. Never a second item. `products` has `get_cart` so Marvin can tell several of the same product apart.
+- TypeSafe sees the draft as `item_in_progress`, so "salmon" or "no thanks" route to `products`; Marvin gets it in his note, so an option with the same name as a menu item (Slow Cooked Beef) is read as the option.
+- **Checkout with an unfinished item:** nothing is checked out yet; Marvin says what is still open and asks whether to finish it or check out without it. Asked once: checking out again leaves it out (the draft is dropped). Any new choice resets that.
+- **Cleared** when the item is added or discarded, when `checkout_order` succeeds in the chat, and when a web checkout completes (Cart plugin), so nothing half-built carries into the next order.
+- Redis down: nothing is remembered between messages, so the optional groups are skipped and `needs_options` says `remembered: false`, telling Marvin to pass every choice so far.
 
 ## Configuration (secret JSON)
 
