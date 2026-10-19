@@ -389,7 +389,7 @@ INSERT INTO shops (
 ) VALUES (
   99, 1, 'New York Pizza',
   'be', '', 'Kasterlee', '2460', 'Hofstraat 26B',
-  '3197058016728', 'fOiS0K8Twvy43PfmwrNPuEKSH2FGCKJOjFgxkrZMg5AgFBJU1UGhIb3J5a4SVTgD',
+  '', '',
   0, 0,
   35, 1.5,
   0, 0, 0, 0

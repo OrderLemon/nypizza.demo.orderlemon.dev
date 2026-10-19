@@ -44,6 +44,7 @@ final readonly class Decision
         public ?string $logistics = null,
         public int $tokens = 0,
         public float $seconds = 0.0,
+        public float $minLead = 0.15,
     ) {}
 
     public static function fallback(string $reason, float $threshold = 0.6): self
@@ -63,9 +64,27 @@ final readonly class Decision
         return match (true) {
             !$this->ok                                   => $this->fallbackReason ?? 'typesafe_failed',
             $this->branch === null || $this->do === null => 'no_branch',
-            $this->branchConfidence < $this->threshold   => 'low_confidence',
+            !$this->sureOfBranch()                       => 'low_confidence',
             default                                      => null,
         };
+    }
+
+    /**
+     * Sure enough to act: confidence at the threshold, or the top branch is
+     * near it (at least threshold - 0.1) and clearly ahead of the second
+     * (by min_lead), as with a "yes" that only one of two readings fits well.
+     */
+    private function sureOfBranch(): bool
+    {
+        if ($this->branchConfidence >= $this->threshold) {
+            return true;
+        }
+        $p = array_values($this->branchProbabilities);
+        rsort($p);
+        $top = (float) ($p[0] ?? 0.0);
+        $second = (float) ($p[1] ?? 0.0);
+
+        return $top >= $this->threshold - 0.1 && $top - $second >= $this->minLead;
     }
 
     public function isConfident(float $confidence): bool

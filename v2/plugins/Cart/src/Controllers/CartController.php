@@ -20,6 +20,7 @@ use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
 use Plugins\Whatsapp\Support\ChannelInvitationLinker;
+use Plugins\Whatsapp\AI\ItemDraft;
 
 /**
  * A plain controller. It returns a {@see Response} exactly like a core
@@ -41,6 +42,7 @@ final class CartController
         private readonly LanguageHelper $language,
         private readonly ClientService $clientService,
         private readonly ChannelInvitationLinker $channelInvitationLinker,
+        private readonly ItemDraft $drafts,
     ){}
 
     public function update(Request $request): Response
@@ -188,6 +190,9 @@ final class CartController
      */
     private function noteCheckoutInTranscript(string $phone) : void
     {
+        // Checked out on the web: nothing half-built in the chat carries over.
+        $this->drafts->clear($phone);
+
         try {
             $this->transcripts->append(
                 $phone,

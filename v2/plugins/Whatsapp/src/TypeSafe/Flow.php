@@ -30,6 +30,12 @@ final readonly class Flow
         return (float) $this->data['settings']['threshold'];
     }
 
+    /** How far the top branch must lead the second to count as sure when its confidence is just under the threshold. */
+    public function minLead(): float
+    {
+        return (float) ($this->data['settings']['min_lead'] ?? 0.15);
+    }
+
     public function historyTurns(): int
     {
         return (int) $this->data['settings']['history_turns'];

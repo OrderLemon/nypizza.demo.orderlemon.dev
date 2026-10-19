@@ -203,6 +203,10 @@ final class FlowLoader
         if (!is_int($threshold) && !is_float($threshold) || $threshold < 0 || $threshold > 1) {
             $errors[] = 'settings.threshold must be a number from 0 to 1';
         }
+        $lead = $flow['settings']['min_lead'] ?? 0.15;
+        if (!is_int($lead) && !is_float($lead) || $lead < 0 || $lead > 1) {
+            $errors[] = 'settings.min_lead must be a number from 0 to 1';
+        }
         $turns = $flow['settings']['history_turns'] ?? null;
         if (!is_int($turns) || $turns < 0 || $turns > 20) {
             $errors[] = 'settings.history_turns must be a whole number from 0 to 20';

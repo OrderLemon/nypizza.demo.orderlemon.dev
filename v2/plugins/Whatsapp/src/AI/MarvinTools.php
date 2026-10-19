@@ -62,6 +62,7 @@ final class MarvinTools
         private readonly ShopBackground $shopBackground,
         private readonly CheckoutUpsell $checkoutUpsell,
         private readonly ShopService $shopService,
+        private readonly ItemDraft $drafts,
     ) {}
 
     /**
@@ -218,12 +219,21 @@ final class MarvinTools
                     . 'want something — "a large pepperoni", "add fries", "make it two". One call '
                     . 'per product; call it again for the next one. '
                     . 'Pass the product_id from the menu, how many, and the option ids they chose '
-                    . '(sizes, crusts, toppings) as plain option ids like "medium", "classic", '
-                    . '"mushrooms". You do not need to know which group an option belongs to. '
+                    . '(sizes, crusts, toppings): the "id" of each option in that product\'s config_groups in the '
+                    . 'menu, e.g. ["34","46","67"]. You do not need to know which group an option belongs to. '
+                    . 'Anything in unknown_options was not applied: tell the shopper, never say it was added. '
                     . 'Never pass a price — the basket prices itself and tells you the total. '
-                    . 'If the reply says needs_options, the product cannot be added until they '
-                    . 'choose: ask them for exactly the groups listed, using the option labels '
-                    . 'given, then call this again with their answer. Nothing was added yet. '
+                    . 'Products with option groups are built over several messages; the choices so far are '
+                    . 'remembered, so each call only needs the new option ids (if a result says remembered: '
+                    . 'false, pass every choice made so far). Pass every pick as soon as the shopper makes it, '
+                    . 'never hold picks back to collect more first. '
+                    . 'needs_options: nothing was added yet. Ask for ALL the groups listed in one message, '
+                    . 'each with its options (and any extra price), then call this again with their answer. '
+                    . 'ask_optional: the required choices are done, but this optional group was not offered '
+                    . 'yet. Offer it in one short question ("How about [group]? You can add: …", with extra '
+                    . 'prices), then call this again with what they pick, or with skip_optional if they want '
+                    . 'none of it. Nothing was added yet. Never decide for them that they want no extras. '
+                    . 'To change an item already in the basket, use change_existing: never add a second one. '
                     . 'If it says deal_not_supported, tell them deals have to be picked on the '
                     . 'web menu and offer to add the items separately instead. '
                     . 'If it says ordering_closed, nothing was added: the shop has no pickup or '
@@ -260,8 +270,38 @@ final class MarvinTools
                             'type'        => 'array',
                             'items'       => ['type' => 'string'],
                             'description' =>
-                                'Option ids the shopper chose, e.g. ["large","thin","extra-cheese"]. '
-                                . 'Only ids that appear in that product\'s options. Omit if none.',
+                                'Ids of the options the shopper chose, from the product\'s config_groups in the menu, e.g. ["34","46","67"]. '
+                                . 'Only ids that appear in that product\'s options. Omit if none. '
+                                . 'For an item being built, only the new choices: earlier ones are kept.',
+                        ],
+                        'skip_optional' => [
+                            'type'        => 'boolean',
+                            'description' => 'The shopper wants nothing from the optional group you just offered (no, no thanks).',
+                        ],
+                        'no_more_options' => [
+                            'type'        => 'boolean',
+                            'description' => 'The shopper wants no more extras at all (that\'s it, just add it): add it now with what is chosen.',
+                        ],
+                        'discard' => [
+                            'type'        => 'boolean',
+                            'description' => 'The shopper no longer wants the item being built: forget it, nothing is added.',
+                        ],
+                        'change_existing' => [
+                            'type'        => 'boolean',
+                            'description' =>
+                                'Change an item that is already in the basket instead of adding a new one ("add corn to '
+                                . 'the bowl", "make it quinoa", "no cucumber"). Pass only the change: option_ids to add or '
+                                . 'swap in, remove_option_ids to take out. The line keeps its other choices and quantity. '
+                                . 'Changes the latest line of this product, or line_id when given.',
+                        ],
+                        'line_id' => [
+                            'type'        => 'integer',
+                            'description' => 'With change_existing: the basket line to change, when there are several of this product.',
+                        ],
+                        'remove_option_ids' => [
+                            'type'        => 'array',
+                            'items'       => ['type' => 'string'],
+                            'description' => 'With change_existing: option ids to take off the item.',
                         ],
                     ],
                     'required'   => ['product_id'],
@@ -547,12 +587,233 @@ final class MarvinTools
      * touches a price here — Marvin passes an id, a quantity and bare option
      * ids, nothing else.
      */
+    /**
+     * The product's optional option groups, in menu order, shaped like
+     * MenuService::requiredGroups() plus whether more than one may be picked.
+     *
+     * @return list<array{group_id: string, label: string, multiple: bool, options: list<array{option_id: string, label: string, price_delta: float}>}>
+     */
+    private function optionalGroups(int $productId): array
+    {
+        $out = [];
+        foreach ((array) ($this->menuService->product($productId)['config_groups'] ?? []) as $group) {
+            if (!is_array($group) || !isset($group['id']) || ($group['required'] ?? false) === true) {
+                continue;
+            }
+            $out[] = [
+                'group_id' => (string) $group['id'],
+                'label'    => (string) ($group['label'] ?? $group['id']),
+                'multiple' => ($group['type'] ?? 'single') === 'multiple',
+                'options'  => array_map(
+                    static fn(array $o): array => [
+                        'option_id'   => (string) $o['id'],
+                        'label'       => (string) ($o['label'] ?? $o['id']),
+                        'price_delta' => (float) ($o['priceDelta'] ?? 0),
+                    ],
+                    array_values(array_filter((array) ($group['options'] ?? []), static fn($o): bool => is_array($o) && isset($o['id']))),
+                ),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * The product's option ids for what Marvin passed: an option id as is, or
+     * an option's name in any case, with or without accents, dashes or the
+     * group note ("pickled-veggies", "Pickled Veggies", "Salmon"). Anything
+     * that matches no option is kept as given, so it comes back in unknown_options.
+     *
+     * @param list<string> $given
+     * @return list<string>
+     */
+    private function optionIds(int $productId, array $given): array
+    {
+        $plain = static function (string $text): string {
+            $text = (string) preg_replace('/\s*\(.*?\)\s*/u', ' ', mb_strtolower($text));
+            $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
+
+            return trim((string) preg_replace('/[^a-z0-9]+/', ' ', $ascii === false ? $text : $ascii));
+        };
+
+        $ids = $byName = [];
+        foreach ((array) ($this->menuService->product($productId)['config_groups'] ?? []) as $group) {
+            foreach ((array) (is_array($group) ? ($group['options'] ?? []) : []) as $option) {
+                if (is_array($option) && isset($option['id'])) {
+                    $ids[(string) $option['id']] = true;
+                    $byName[$plain((string) ($option['label'] ?? ''))] ??= (string) $option['id'];
+                    $byName[$plain((string) $option['id'])] ??= (string) $option['id'];
+                }
+            }
+        }
+
+        return array_values(array_unique(array_map(
+            static fn(string $g): string => isset($ids[$g]) ? $g : ($byName[$plain($g)] ?? $g),
+            $given,
+        )));
+    }
+
+    /**
+     * Option id => group id, for the product's single-choice groups only.
+     *
+     * @return array<string, string>
+     */
+    private function singleGroups(int $productId): array
+    {
+        $map = [];
+        foreach ((array) ($this->menuService->product($productId)['config_groups'] ?? []) as $group) {
+            if (!is_array($group) || !isset($group['id']) || ($group['type'] ?? 'single') !== 'single') {
+                continue;
+            }
+            foreach ((array) ($group['options'] ?? []) as $option) {
+                if (is_array($option) && isset($option['id'])) {
+                    $map[(string) $option['id']] = (string) $group['id'];
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * A cart item for a product with its resolved options.
+     *
+     * @param list<array<string, mixed>> $config resolveOptions()['config']
+     * @return array<string, mixed>
+     */
+    private function cartItem(int $productId, int $quantity, array $config): array
+    {
+        $product = $this->menuService->product($productId) ?? [];
+        $vat = (int) ($product['vat_percentage'] ?? 0);
+
+        return [
+            'product_id'       => $productId,
+            'category_id'      => (int) ($product['category_id'] ?? 0),
+            'item_description' => $this->menuService->name($productId),
+            'unit_price'       => $this->menuService->basePrice($productId),
+            'vat_percentage'   => $vat,
+            'quantity'         => $quantity,
+
+            'configs'          => array_map(
+                static fn(array $c): array => [
+                    'option_id'         => $c['option_id'],
+                    'group_id'          => $c['group_id'],
+                    'item_description'  => $c['item_description'],
+                    'unit_price'        => $c['unit_price'],
+                    'vat_percentage'    => $vat,
+                    'quantity'          => $quantity,
+                ],
+                $config,
+            ),
+        ];
+    }
+
+    /**
+     * Change the options of an item already in the basket: its current
+     * choices, with the new picks swapped or added in and the removed ones
+     * taken out, replace the line (same quantity) in one cart update.
+     * Nothing changes when a required choice would end up missing.
+     */
+    private function changeLine(string $phone, int $productId, array $input): array
+    {
+        $order = $this->cartService->activeOrderFor($phone);
+        if ($order === null) {
+            return ['ok' => false, 'reason' => 'no_active_cart'];
+        }
+
+        $items  = $this->cartService->withItemsAndTotal((int) $order['id'], [], false)['items'] ?? [];
+        $lineId = (int) ($input['line_id'] ?? 0);
+        $host   = null;
+        foreach ($items as $line) {
+            if ((int) ($line['parent_id'] ?? 0) !== 0) {
+                continue;
+            }
+            // The given line, else the latest line of this product.
+            if ($lineId !== 0 ? (int) $line['id'] === $lineId : (int) $line['product_id'] === $productId) {
+                $host = $line;
+            }
+        }
+        if ($host === null) {
+            return ['ok' => false, 'reason' => 'no_such_line', 'product_id' => $productId];
+        }
+        $productId = (int) $host['product_id'];
+
+        $current = [];
+        foreach ($items as $line) {
+            if ((int) ($line['parent_id'] ?? 0) === (int) $host['id']) {
+                $current[] = (string) ($line['option_id'] ?? $line['product_id']);
+            }
+        }
+
+        $new    = $this->optionIds($productId, is_array($input['option_ids'] ?? null) ? array_map('strval', array_filter($input['option_ids'], 'is_scalar')) : []);
+        $drop   = $this->optionIds($productId, is_array($input['remove_option_ids'] ?? null) ? array_map('strval', array_filter($input['remove_option_ids'], 'is_scalar')) : []);
+        $single = $this->singleGroups($productId);
+        $swapped = array_filter(array_map(static fn(string $id): ?string => $single[$id] ?? null, $new));
+        $kept   = array_filter(
+            $current,
+            static fn(string $id): bool => !in_array($id, $drop, true) && !in_array($single[$id] ?? null, $swapped, true),
+        );
+
+        $resolved = $this->menuService->resolveOptions($productId, array_values(array_unique([...$new, ...$kept])));
+        if ($resolved['missing'] !== []) {
+            return [
+                'ok'         => false,
+                'reason'     => 'needs_options',
+                'product_id' => $productId,
+                'name'       => $this->menuService->name($productId),
+                'chosen'     => array_column($resolved['config'], 'item_description'),
+                'needs'      => $resolved['missing'],
+                'note'       => 'Nothing was changed: a required choice would be missing.',
+            ];
+        }
+
+        $quantity = (int) $host['quantity'];
+        try {
+            $updated = $this->cartService->updateCart([
+                [
+                    'id'                => (int) $host['id'],
+                    'product_id'        => $productId,
+                    'category_id'       => (int) $host['category_id'],
+                    'item_description'  => (string) $host['item_description'],
+                    'unit_price'        => (float) $host['unit_price'],
+                    'vat_percentage'    => (int) $host['vat_percentage'],
+                    'campaign_id'       => $host['campaign_id'] ?? null,
+                    'product_reference' => $host['product_reference'] ?? null,
+                    'quantity'          => 0,
+                    'override_quantity' => true,
+                ],
+                $this->cartItem($productId, $quantity, $resolved['config']),
+            ], $phone);
+        } catch (OrderingUnavailableException $e) {
+            return ['ok' => false, 'reason' => 'ordering_closed', 'availability' => $e->availability()];
+        }
+
+        $draft = $this->summarize($updated);
+        $this->attach(MarvinTool::AddToOrder->value, ['draft' => $draft]);
+
+        return [
+            'ok'              => true,
+            'changed'         => $this->menuService->name($productId),
+            'now'             => array_column($resolved['config'], 'item_description'),
+            'unknown_options' => $resolved['unknown'],
+            'total'           => $updated['total'],
+            'draft'           => $draft,
+        ];
+    }
+
     private function addToOrder(string $phone, array $input): array
     {
         
         $productId = (int) ($input['product_id'] ?? 0);
         $quantity  = max(1, min(self::MAX_QUANTITY, (int) ($input['quantity'] ?? 1)));
-        $optionIds = is_array($input['option_ids'] ?? null) ? $input['option_ids'] : [];
+        $optionIds = is_array($input['option_ids'] ?? null) ? array_map('strval', array_filter($input['option_ids'], 'is_scalar')) : [];
+        $draft     = $this->drafts->get($phone);
+
+        if (!empty($input['discard'])) {
+            $this->drafts->clear($phone);
+
+            return ['ok' => true, 'discarded' => $draft === null ? null : $this->menuService->name($draft['product_id'])];
+        }
 
         if (!$this->menuService->has($productId)) {
             return ['ok' => false, 'reason' => 'unknown_product', 'product_id' => $productId];
@@ -568,43 +829,83 @@ final class MarvinTools
             ];
         }
 
-        $resolved = $this->menuService->resolveOptions($productId, $optionIds);
+        if (!empty($input['change_existing'])) {
+            return $this->changeLine($phone, $productId, $input);
+        }
 
-        // A required choice is missing: tell Marvin what to ask, change nothing.
+        $optionIds = $this->optionIds($productId, $optionIds);
+
+        // Continuing the item being built: keep the earlier choices, except
+        // where a new pick in a single-choice group replaces the old one.
+        $answered = [];
+        $offered  = null;
+        if ($draft !== null && $draft['product_id'] === $productId) {
+            $singleGroupOf = $this->singleGroups($productId);
+            $replaced = array_filter(array_map(static fn(string $id): ?string => $singleGroupOf[$id] ?? null, $optionIds));
+            $earlier  = array_filter($draft['option_ids'], static fn(string $id): bool => !in_array($singleGroupOf[$id] ?? null, $replaced, true));
+            $optionIds = array_values(array_unique([...$optionIds, ...$earlier]));
+            $quantity  = isset($input['quantity']) ? $quantity : $draft['quantity'];
+            $answered  = $draft['answered'];
+            $offered   = $draft['offered'];
+        }
+
+        $resolved = $this->menuService->resolveOptions($productId, $optionIds);
+        $chosen   = array_column($resolved['config'], 'item_description');
+        $keep     = fn(?string $offer): array => [
+            'product_id' => $productId,
+            'quantity'   => $quantity,
+            'option_ids' => array_column($resolved['config'], 'option_id'),
+            'answered'   => array_values(array_unique($answered)),
+            'offered'    => $offer,
+        ];
+
+        // A required choice is missing: ask for all of them, change nothing in the basket.
         if ($resolved['missing'] !== []) {
+            $this->drafts->save($phone, $keep(null));
+
             return [
                 'ok'         => false,
                 'reason'     => 'needs_options',
                 'product_id' => $productId,
                 'name'       => $this->menuService->name($productId),
+                'chosen'     => $chosen,
                 'needs'      => $resolved['missing'],
+                // false: nothing is kept between messages, so the next call must carry every choice so far.
+                'remembered' => $this->drafts->available(),
             ];
         }
 
-        $product = $this->menuService->product($productId) ?? [];
-        $categoryId = (int) ($product['category_id'] ?? 0);
-        $vat = (int) ($product['vat_percentage'] ?? 0);
+        // Required choices done: offer each optional group once before adding.
+        // Without Redis nothing can be remembered between messages, so add now.
+        if (!empty($input['skip_optional']) && $offered !== null) {
+            $answered[] = $offered;
+        }
+        if (empty($input['no_more_options']) && $this->drafts->available()) {
+            $picked = array_column($resolved['config'], 'group_id');
+            $open   = array_values(array_filter(
+                $this->optionalGroups($productId),
+                static fn(array $g): bool => !in_array($g['group_id'], $answered, true) && !in_array($g['group_id'], $picked, true),
+            ));
+            if ($open !== []) {
+                $this->drafts->save($phone, $keep($open[0]['group_id']));
 
-        $item = [
-            'product_id'       => $productId,
-            'category_id'      => $categoryId,
-            'item_description' => $this->menuService->name($productId),
-            'unit_price'       => $this->menuService->basePrice($productId),
-            'vat_percentage'   => $vat,
-            'quantity'         => $quantity,
+                return [
+                    'ok'                  => false,
+                    'reason'              => 'ask_optional',
+                    'product_id'          => $productId,
+                    'name'                => $this->menuService->name($productId),
+                    'chosen'              => $chosen,
+                    'offer'               => $open[0],
+                    'more_optional_after' => count($open) - 1,
+                ];
+            }
+        }
 
-            'configs'          => array_map(
-                static fn(array $c): array => [
-                    'option_id'         => $c['option_id'],
-                    'group_id'          => $c['group_id'],
-                    'item_description'  => $c['item_description'],
-                    'unit_price'        => $c['unit_price'],
-                    'vat_percentage'    => $vat,
-                    'quantity'          => $quantity,
-                ],
-                $resolved['config'],
-            ),
-        ];
+        if ($draft !== null && $draft['product_id'] === $productId) {
+            $this->drafts->clear($phone);
+        }
+
+        $item = $this->cartItem($productId, $quantity, $resolved['config']);
 
         try {
             $order = $this->cartService->updateCart([$item], $phone);
@@ -738,23 +1039,35 @@ final class MarvinTools
         $moment = $this->storedMoment($full);
         $logisticsType = $this->isDelivery($full) ? CartService::DELIVERY_LOGISTIC_TYPE : CartService::PICKUP_LOGISTIC_TYPE;
         $problem = $moment === null ? 'no_time_set' : $this->shopService->momentProblem($logisticsType, $moment, $now);
+        $timeSet = false;
         if ($problem !== null) {
-            return [
-                'ok'           => false,
-                'reason'       => 'logistics_first',
-                'problem'      => $problem,
-                'logistics'    => $draft['logistics'],
-                'availability' => $this->shopService->availability($now),
-                'total'        => $full['total'],
-            ];
+            // No time yet, or one that has passed: as soon as possible, the first
+            // available time for this type, without asking.
+            $asap = $this->changeLogistics(['logistics_type' => $logisticsType, 'date' => 'asap'], $phone);
+            if (($asap['ok'] ?? false) !== true) {
+                return [
+                    'ok'           => false,
+                    'reason'       => 'logistics_first',
+                    'problem'      => $problem,
+                    'logistics'    => $draft['logistics'],
+                    'availability' => $this->shopService->availability($now),
+                    'total'        => $full['total'],
+                ];
+            }
+            $full    = $this->cartService->withItemsAndTotal((int) $order['id'], [], false);
+            $draft   = $this->summarize($full);
+            $timeSet = true;
         }
 
         $this->attach(MarvinTool::CheckoutOrder->value, ['draft' => $draft]);
+        // Checked out: nothing half-built is carried into the next order.
+        $this->drafts->clear($phone);
 
         return [
             'ok'    => true,
             'total' => $full['total'],
             'draft' => $draft,
+            ...($timeSet ? ['note' => 'No time was set: the first available time was used. Just say it, ask nothing.'] : []),
         ];
     }
 
@@ -836,10 +1149,24 @@ final class MarvinTools
             return ['ok' => false, 'reason' => 'empty_basket', ...$clock];
         }
 
+        $asap = strtolower($raw) === 'asap';
+        $movedToOpening = false;
         try {
             $this->cartService->updateCartLogistics($type, $moment, $phone);
         } catch (OrderingUnavailableException $e) {
-            return ['ok' => false, 'reason' => $e->reason(), 'availability' => $e->availability(), ...$clock];
+            // "As soon as possible" while closed means the first time it opens:
+            // book that and say so, no question.
+            $next = $asap ? $this->nextOpening($e->availability(), $type, $now) : null;
+            if ($next === null) {
+                return ['ok' => false, 'reason' => $e->reason(), 'availability' => $e->availability(), ...$clock];
+            }
+            try {
+                $this->cartService->updateCartLogistics($type, $next, $phone);
+            } catch (OrderingUnavailableException $e) {
+                return ['ok' => false, 'reason' => $e->reason(), 'availability' => $e->availability(), ...$clock];
+            }
+            $moment = $next;
+            $movedToOpening = true;
         }
 
         $logistics = [
@@ -849,7 +1176,29 @@ final class MarvinTools
 
         $this->attach(MarvinTool::ChangeLogistics->value, ['logistics' => $logistics]);
 
-        return ['ok' => true, ...$logistics, ...$clock];
+        return [
+            'ok' => true,
+            ...$logistics,
+            ...($movedToOpening ? ['note' => 'Not open now: set to the first possible time. Just tell the shopper the time, ask nothing.'] : []),
+            ...$clock,
+        ];
+    }
+
+    /**
+     * The start of the next window for this type, from an availability()
+     * result ("next": {"from": "Monday 2026-10-19 11:00"}).
+     *
+     * @param array<string, mixed> $availability
+     */
+    private function nextOpening(array $availability, int $type, \DateTimeImmutable $now): ?\DateTimeImmutable
+    {
+        $from = $availability[CartService::LOGISTIC_LABELS[$type]]['next']['from'] ?? null;
+        if (!is_string($from) || preg_match('/(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/', $from, $m) !== 1) {
+            return null;
+        }
+        $next = $this->parseMoment($m[1]);
+
+        return $next !== null && $next > $now ? $next : null;
     }
 
     /** "YYYY-MM-DD HH:MM" (seconds tolerated), or null if it isn't a real date. */

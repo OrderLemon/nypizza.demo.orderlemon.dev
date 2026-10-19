@@ -114,6 +114,9 @@ final class Marvin
     /** History turns the writer gets; enough for "yes" and "that one" to make sense. */
     private const int WRITER_HISTORY = 8;
 
+    /** @var list<string> tools run for the last reply, in order: his own calls and the ones code ran */
+    private array $calledTools = [];
+
     /** Writer prompt, placeholders filled. */
     private ?string $writerText = null;
 
@@ -185,9 +188,15 @@ final class Marvin
         return $this->respond($conversation, $clientName, $phone, $language, ['mode' => 'tools', 'tools' => $tools, 'calls' => [], 'note' => $note]);
     }
 
+    /** @return list<string> the tools run for the last reply, in order */
+    public function calledTools(): array
+    {
+        return $this->calledTools;
+    }
+
     /**
-     * The fixed "I can't help right now" reply (marvin_fallback, translated,
-     * with the support contacts). No AI call.
+     * The fixed "I can't help you with this at the moment" reply
+     * (marvin_fallback, translated). No AI call.
      *
      * @return array{type: string, message: string}
      */
@@ -210,6 +219,7 @@ final class Marvin
         $this->replyLanguage = ($language !== null && $language !== '') ? $language : 'en';
 
         $this->tools->reset();
+        $this->calledTools = [];
 
         $fallback = ['type' => self::FALLBACK_SOURCE, 'message' => $this->fallback()];
 
@@ -313,6 +323,7 @@ final class Marvin
                             'tool'  => $block['name'] ?? null,
                             'input' => $block['input'] ?? null,
                         ]);
+                        $this->calledTools[] = (string) ($block['name'] ?? '');
                         if ($allowed !== null && !in_array($block['name'] ?? '', $allowed, true)) {
                             $this->logger->warning('marvin: tool blocked', ['tool' => $block['name'] ?? null, 'allowed' => $allowed]);
                             $results[] = [
@@ -370,11 +381,11 @@ final class Marvin
      private function replyFrom(array $body, string $earlier = ''): array
     {
         $message    = $this->textOf($body);
-        if ($earlier !== '') {
-            // An empty final turn falls back in textOf(); the earlier text is the answer then.
-            $message = $message === $this->fallback() || str_starts_with($message, $earlier)
-                ? ($message === $this->fallback() ? $earlier : $message)
-                : $earlier . "\n\n" . $message;
+        // The final turn is the reply (the menu prompt says to write it after the
+        // tools); text from earlier tool turns is only used when it is empty,
+        // since sending both repeats the opening.
+        if ($earlier !== '' && $message === $this->fallback()) {
+            $message = $earlier;
         }
         $attachment = $this->tools->attachment();
 
@@ -837,6 +848,7 @@ final class Marvin
         $parts = [trim($note)];
         foreach ($calls as [$tool, $input]) {
             $this->logger->info('marvin: writer tool call', ['tool' => $tool, 'input' => $input]);
+            $this->calledTools[] = $tool;
             $result = $this->tools->run(['type' => 'tool_use', 'id' => 'toolu_ts_' . bin2hex(random_bytes(10)), 'name' => $tool, 'input' => $input], $phone);
             $parts[] = "Result of {$tool}: " . (is_string($result['content'] ?? null) ? $result['content'] : json_encode($result['content'] ?? null, JSON_UNESCAPED_UNICODE));
             if (($products = $this->productFacts($input)) !== '') {

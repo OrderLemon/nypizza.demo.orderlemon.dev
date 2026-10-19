@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Plugins\Whatsapp\TypeSafe;
 
+use Plugins\Whatsapp\AI\ItemDraft;
 use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\MarvinTool;
 use Pmsrapi\V2\Core\Config;
@@ -77,6 +78,7 @@ final class DecisionHandler
         private readonly Marvin $marvin,
         private readonly FlowLoader $flows,
         private readonly OrderSlots $slots,
+        private readonly ItemDraft $drafts,
         private readonly JsonService $json,
         private readonly ShopService $shops,
         private readonly Config $config,
@@ -90,6 +92,14 @@ final class DecisionHandler
     public function reply(Decision $decision, array $conversation, ?string $clientName, string $phone, ?string $language): array
     {
         $language = $language !== null && $language !== '' ? $language : $this->flows->forShop()->defaultLanguage();
+
+        $draft = $this->drafts->summary($phone);
+
+        // Building an item and torn between finishing it and checking out: both
+        // start with finishing the item, so act on the branch that builds items.
+        if ($decision->reason() === 'low_confidence' && $draft !== null) {
+            $decision = $this->finishingItem($decision) ?? $decision;
+        }
 
         if ($decision->cannotAct()) {
             return $this->fallback($decision, (string) $decision->reason(), $conversation, $language);
@@ -106,7 +116,7 @@ final class DecisionHandler
             $this->outcome = 'marvin_tools';
             $this->logger->info('typesafe: Marvin with tools', ['branch' => $decision->branch, 'tools' => $decision->tools]);
 
-            return $this->marvin->replyWithTools($conversation, $clientName, $phone, $language, $decision->tools, $this->toolsNote($decision));
+            return $this->marvin->replyWithTools($conversation, $clientName, $phone, $language, $decision->tools, $this->toolsNote($decision, $phone));
         };
 
         $this->outcome = 'acted';
@@ -121,7 +131,7 @@ final class DecisionHandler
                 $decision->instructions,
             ))),
             'fallback' => null,
-            default    => $this->tool($decision, $reply, $withTools),
+            default    => $this->tool($decision, $reply, $withTools, $phone),
         };
 
         if ($result === null) {
@@ -169,6 +179,12 @@ final class DecisionHandler
         return $this->outcome;
     }
 
+    /** @return list<string> the tools that actually ran for the last reply */
+    public function calledTools(): array
+    {
+        return $this->outcome === 'fallback' && $this->fallbackReason !== 'marvin_failed' ? [] : $this->marvin->calledTools();
+    }
+
     /** Why the last reply was the fallback, for the webhook response; null otherwise. */
     public function fallbackReason(): ?string
     {
@@ -202,7 +218,7 @@ final class DecisionHandler
      * @param callable(list<array{0: string, 1: array<string,mixed>}>, string): array<string,mixed> $reply
      * @param callable(): ?array<string,mixed>                                                     $withTools
      */
-    private function tool(Decision $decision, callable $reply, callable $withTools): ?array
+    private function tool(Decision $decision, callable $reply, callable $withTools, string $phone): ?array
     {
         $tool = MarvinTool::tryFrom((string) $decision->tool());
 
@@ -219,6 +235,26 @@ final class DecisionHandler
 
         if ($tool === null || !in_array($tool, self::NO_INPUT_TOOLS, true)) {
             return $withTools();
+        }
+
+        // Checking out while an item is still being built: ask first whether to
+        // finish it or leave it out; asked once, then checking out leaves it out.
+        $draft = $tool === MarvinTool::CheckoutOrder ? $this->drafts->get($phone) : null;
+        if ($draft !== null && !$draft['reminded']) {
+            $this->drafts->save($phone, ['reminded' => true] + $draft);
+            $summary = $this->drafts->summary($phone);
+            $this->logger->info('typesafe: checkout with an unfinished item, asking', ['item' => $summary['item'] ?? null]);
+
+            return $reply([], $this->note($decision, instructions: sprintf(
+                'Nothing was done yet. They want to check out, but %s is not finished: chosen so far: %s; still open: %s. '
+                . 'Say so in one short message and ask whether they want to finish it now or check out without it.',
+                $summary['item'] ?? 'an item', implode(', ', $summary['chosen'] ?? []) ?: 'nothing',
+                implode(', ', $summary['waiting_for'] ?? []) ?: 'nothing',
+            )));
+        }
+        if ($draft !== null) {
+            $this->logger->info('typesafe: checkout without the unfinished item', ['product_id' => $draft['product_id']]);
+            $this->drafts->clear($phone);
         }
 
         $this->logger->info('typesafe: running tool', ['branch' => $decision->branch, 'tool' => $tool->value]);
@@ -321,11 +357,64 @@ final class DecisionHandler
     // ---------------------------------------------------------------- helpers
 
     /**
+     * When the two most likely branches are checkout and the branch that
+     * builds items (its tools include add_to_order), the decision for the
+     * latter, taken as sure enough; null otherwise.
+     */
+    private function finishingItem(Decision $decision): ?Decision
+    {
+        $flow = $this->flows->forShop();
+        $top = array_keys($decision->topBranches());
+        $builds = null;
+        $checkout = false;
+        foreach ($top as $id) {
+            $branch = $flow->branch((string) $id);
+            if ($branch === null) {
+                return null;
+            }
+            if (($branch['do'] ?? null) === 'tool:' . MarvinTool::CheckoutOrder->value) {
+                $checkout = true;
+            } elseif (in_array(MarvinTool::AddToOrder->value, (array) ($branch['tools'] ?? []), true)) {
+                $builds = $branch;
+            }
+        }
+        if (!$checkout || $builds === null) {
+            return null;
+        }
+
+        $this->logger->info('typesafe: close call while building an item, finishing it', ['top' => $decision->topBranches()]);
+
+        return new Decision(
+            ok: true,
+            threshold: $decision->threshold,
+            branch: (string) $builds['id'],
+            do: (string) $builds['do'],
+            tools: array_values(array_map('strval', (array) ($builds['tools'] ?? []))),
+            instructions: $builds['instructions'] ?? null,
+            branchConfidence: $decision->threshold,
+            branchProbabilities: $decision->branchProbabilities,
+            language: $decision->language,
+            languageConfidence: $decision->languageConfidence,
+            requestedLanguage: $decision->requestedLanguage,
+            requestedLanguageConfidence: $decision->requestedLanguageConfidence,
+            faq: $decision->faq,
+            faqConfidence: $decision->faqConfidence,
+            orderTime: $decision->orderTime,
+            logistics: $decision->logistics,
+            tokens: $decision->tokens,
+            seconds: $decision->seconds,
+            minLead: $decision->minLead,
+        );
+    }
+
+    /**
      * What Marvin is told when he fills in the details: what was decided,
      * which tools to use, and to ask instead of guessing.
      */
-    private function toolsNote(Decision $decision): string
+    private function toolsNote(Decision $decision, string $phone): string
     {
+        $draft = in_array(MarvinTool::AddToOrder->value, $decision->tools, true) ? $this->drafts->summary($phone) : null;
+
         $mentioned = array_filter([
             $decision->logistics,
             $decision->orderTime === null ? null : str_replace('_', ' ', $decision->orderTime),
@@ -338,6 +427,15 @@ final class DecisionHandler
             $mentioned !== [] && in_array(MarvinTool::ChangeLogistics->value, $decision->tools, true)
                 ? 'They also mentioned ' . implode(', ', $mentioned) . '; set it with change_logistics once you know both the type and the time.'
                 : null,
+            $draft === null ? null : sprintf(
+                'You are building %s [product_id %d] with them. Chosen so far: %s. Waiting for: %s. A name in their message that '
+                . 'matches an option of this item is that option, not a new menu item: call add_to_order for this product with only '
+                . 'the new option ids, earlier choices are kept. No thanks to an optional group: skip_optional. That\'s it: '
+                . 'no_more_options. They no longer want it: discard. Other products they ask for are added right away with their '
+                . 'own add_to_order call; the item being built simply stays waiting, so never hold them back until it is finished.',
+                $draft['item'], $draft['product_id'], $draft['chosen'] === [] ? 'nothing' : implode(', ', $draft['chosen']),
+                $draft['waiting_for'] === [] ? 'nothing' : implode(', ', $draft['waiting_for']),
+            ),
             $decision->instructions,
         ));
     }
