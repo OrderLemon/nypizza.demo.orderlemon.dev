@@ -9,6 +9,7 @@ use Plugins\Whatsapp\AI\AnthropicClient;
 use Plugins\Whatsapp\AI\MarvinTools;
 use Plugins\Whatsapp\AI\MarvinTool;
 use Plugins\Whatsapp\Support\LanguageHelper;
+use Plugins\Whatsapp\Support\SupportContacts;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Exception\ValidationException;
@@ -519,12 +520,11 @@ final class Marvin
         [$pickupHours, $deliveyHours] = $this->shopService->getLogisticHours();
 
 
-        $supps = $this->config->secret("support");
+        $supps = array_values(array_map('strval', (array) $this->config->secret("support", [])));
 
-        [$support1, $support2] = array_values($supps);
-
-        $this->systemText = str_replace('{{SUPPORT_1}}', ucwords($support1), $template);
-        $this->systemText = str_replace('{{SUPPORT_2}}', ucwords($support2), $this->systemText);
+        $this->systemText = str_replace('{{SUPPORT_1}}', $supps[0] ?? '', $template);
+        $this->systemText = str_replace('{{SUPPORT_2}}', $supps[1] ?? $supps[0] ?? '', $this->systemText);
+        $this->systemText = str_replace('{{SUPPORT_CONTACTS}}', SupportContacts::text($this->config->secret("support", [])), $this->systemText);
 
         $this->systemText = str_replace('{{PICKUP_HOURS}}', json_encode($pickupHours, JSON_THROW_ON_ERROR), $this->systemText);
         $this->systemText = str_replace('{{DELIVERY_HOURS}}', json_encode($deliveyHours, JSON_THROW_ON_ERROR), $this->systemText);
@@ -667,16 +667,14 @@ final class Marvin
     {
         $override = $this->setting('fallback', null);
 
-        // The last-resort reply must never fail itself: any number of contacts.
-        $supps = array_values(array_map('strval', (array) $this->config->secret("support", [])));
-        $support1 = $supps[0] ?? '';
-        $support2 = $supps[1] ?? $support1;
-
         if (is_string($override) && trim($override) !== '') {
             return $override;
         }
 
-        return $this->language->translate('marvin_fallback', $this->replyLanguage, ["support_1" => $support1, "support_2" => $support2]);
+        // The last-resort reply must never fail itself: any number of contacts.
+        return trim($this->language->translate('marvin_fallback', $this->replyLanguage, [
+            'support' => SupportContacts::text($this->config->secret('support', [])),
+        ]));
     }
 
     // ------------------------------------------------------------- history
@@ -898,12 +896,13 @@ final class Marvin
             if (!is_string($path) || !is_readable($path)) {
                 throw new ApiException('marvin.prompts.writer is not set or not readable: ' . var_export($path, true));
             } else {
-                $supports = array_values((array) $this->config->secret('support', []));
+                $supports = array_values(array_map('strval', (array) $this->config->secret('support', [])));
                 $this->writerText = (string) preg_replace('/\{\{[A-Z_0-9]+\}\}/', '', strtr((string) file_get_contents($path), [
-                    '{{COMPANY_NAME}}' => (string) ($this->shopInfo['name'] ?? ''),
-                    '{{CLIENT_NAME}}'  => ucwords($this->clientName),
-                    '{{SUPPORT_1}}'    => ucwords((string) ($supports[0] ?? '')),
-                    '{{SUPPORT_2}}'    => ucwords((string) ($supports[1] ?? $supports[0] ?? '')),
+                    '{{COMPANY_NAME}}'     => (string) ($this->shopInfo['name'] ?? ''),
+                    '{{CLIENT_NAME}}'      => ucwords($this->clientName),
+                    '{{SUPPORT_1}}'        => $supports[0] ?? '',
+                    '{{SUPPORT_2}}'        => $supports[1] ?? $supports[0] ?? '',
+                    '{{SUPPORT_CONTACTS}}' => SupportContacts::text($this->config->secret('support', [])),
                 ]));
             }
         }

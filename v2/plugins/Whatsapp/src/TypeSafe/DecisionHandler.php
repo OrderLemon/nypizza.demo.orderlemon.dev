@@ -7,6 +7,7 @@ namespace Plugins\Whatsapp\TypeSafe;
 use Plugins\Whatsapp\AI\ItemDraft;
 use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\MarvinTool;
+use Plugins\Whatsapp\Support\SupportContacts;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Services\JsonService;
@@ -293,8 +294,9 @@ final class DecisionHandler
             // in context, instead of the general fallback. Logged so a FAQ can be added.
             $this->logger->warning('typesafe: faq without answer', ['faq' => $decision->faq, 'conf' => round($decision->faqConfidence, 2)]);
 
-            return $reply([], $this->note($decision, instructions:
-                'This chat has no information about what they asked. Say so plainly in one line, without guessing.'));
+            return $reply([], $this->note($decision, facts: 'Team contacts, one per line: ' . $this->contacts(), instructions:
+                'This chat has no information about what they asked. Say so plainly in one line, without guessing, then give the '
+                . 'team contacts exactly as listed, each on its own line.'));
         }
 
         $instructions = $this->join($decision->instructions, $entry['instructions'] ?? null, $this->ask($entry, $language));
@@ -348,9 +350,12 @@ final class DecisionHandler
 
         $this->logger->info('typesafe: handoff', ['branch' => $decision->branch]);
 
-        return $reply([], $this->note($decision, facts: $text === null ? '' : $this->fill($text), instructions: $this->join(
+        return $reply([], $this->note($decision, facts: $this->join(
+            $text === null ? '' : $this->fill($text),
+            'Team contacts, one per line: ' . $this->contacts(),
+        ), instructions: $this->join(
             $decision->instructions,
-            'This is something only staff can do. Do not promise anything yourself.',
+            'This is something only staff can do. Do not promise anything yourself. Give the team contacts exactly as listed, each on its own line.',
         )));
     }
 
@@ -508,7 +513,13 @@ final class DecisionHandler
         return mb_strlen($json) > self::FACTS_MAX ? mb_substr($json, 0, self::FACTS_MAX) . '…' : $json;
     }
 
-    /** {{SHOP_NAME}}, {{SUPPORT_1}}, {{SUPPORT_2}} in flow texts. */
+    /** The team contacts, "Name: contact" separated by " | " for the note (Marvin puts each on its own line). */
+    private function contacts(): string
+    {
+        return implode(' | ', SupportContacts::lines($this->config->secret('support', [])));
+    }
+
+    /** {{SHOP_NAME}}, {{SUPPORT_1}}, {{SUPPORT_2}}, {{SUPPORT_CONTACTS}} in flow texts. */
     private function fill(string $text): string
     {
         $support = array_values(array_map('strval', (array) $this->config->secret('support', [])));
@@ -517,6 +528,7 @@ final class DecisionHandler
             '{{SHOP_NAME}}' => $this->shops->name(),
             '{{SUPPORT_1}}' => $support[0] ?? '',
             '{{SUPPORT_2}}' => $support[1] ?? $support[0] ?? '',
+            '{{SUPPORT_CONTACTS}}' => SupportContacts::text($this->config->secret('support', [])),
         ]);
     }
 

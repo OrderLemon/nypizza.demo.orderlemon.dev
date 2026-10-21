@@ -21,6 +21,7 @@ use Pmsrapi\V2\Support\Logger;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
 use Plugins\Whatsapp\Support\ChannelInvitationLinker;
 use Plugins\Whatsapp\AI\ItemDraft;
+use Plugins\Whatsapp\Support\SupportContacts;
 
 /**
  * A plain controller. It returns a {@see Response} exactly like a core
@@ -295,11 +296,9 @@ final class CartController
                 MarvinTool::OrderLost->value,
             );
 
-            $supps = $this->config->secret("support");
-
-            [$support1, $support2] = array_values($supps);
-
-            $this->whatsappGateway->sendText($phone, $this->language->translate('order_lost', $language, ["support_1" => $support1, "support_2" => $support2]));
+            $this->whatsappGateway->sendText($phone, $this->language->translate('order_lost', $language, [
+                'support' => SupportContacts::text($this->config->secret('support', [])),
+            ]));
             return true;
         }catch(\Exception $ex){
             $this->logger->error("whatsapp: order lost", ["error" => $ex->getMessage()]);
