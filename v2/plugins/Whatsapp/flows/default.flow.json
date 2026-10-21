@@ -85,8 +85,8 @@
     {
       "id": "handoff",
       "do": "handoff",
-      "description": "Wants something only staff can do: money back, a refund, a discount, a price correction, or complains about an order they already received",
-      "instructions": "Apologise once and show understanding. Say you cannot arrange this in this chat, and that you cannot change prices or send money. Do not argue about the price and do not promise that someone will contact them."
+      "description": "Wants something only staff can do, or wants to talk to someone: money back, a refund, a discount, a price correction, a complaint about an order they received, or asks for support, a person or how to contact the team",
+      "instructions": "Apologise once and show understanding when something went wrong. Say you cannot arrange this in this chat, and that you cannot change prices or send money. Give the team contacts from the facts, each on its own line. Do not argue about the price and do not promise that someone will contact them."
     },
     {
       "id": "no_action",
@@ -122,12 +122,12 @@
   },
   "texts": {
     "handoff.answer": {
-      "en": "Sorry, I can't arrange that in this chat.",
-      "nl": "Sorry, dat kan ik in deze chat niet regelen.",
-      "tr": "Üzgünüm, bunu bu sohbette ayarlayamam.",
-      "es": "Lo siento, no puedo encargarme de eso en este chat.",
-      "de": "Entschuldigung, das kann ich in diesem Chat nicht regeln.",
-      "fr": "Désolé, je ne peux pas m'en occuper dans ce chat."
+      "en": "Sorry, I can't arrange that in this chat. You can reach our team here:",
+      "nl": "Sorry, dat kan ik in deze chat niet regelen. Je kunt ons team hier bereiken:",
+      "tr": "Üzgünüm, bunu bu sohbette ayarlayamam. Ekibimize buradan ulaşabilirsin:",
+      "es": "Lo siento, no puedo encargarme de eso en este chat. Puedes contactar con nuestro equipo aquí:",
+      "de": "Entschuldigung, das kann ich in diesem Chat nicht regeln. Unser Team erreichst du hier:",
+      "fr": "Désolé, je ne peux pas m'en occuper dans ce chat. Tu peux joindre notre équipe ici :"
     }
   }
 }
