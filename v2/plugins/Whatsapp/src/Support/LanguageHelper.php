@@ -221,6 +221,17 @@ final class LanguageHelper
      *        (uppercased) in the translated string, e.g. ['shop_name' => 'Pizza Co']
      *        substitutes {{SHOP_NAME}}.
      */
+    /**
+     * Every language's text for a key, e.g. all labels of a button, so a tap
+     * can be recognised whatever language it was sent in.
+     *
+     * @return list<string>
+     */
+    public function labels(string $key): array
+    {
+        return array_values(array_unique(array_map('strval', self::TRANSLATIONS[$key] ?? [])));
+    }
+
     public function translate(string $key, string $lang, array $vars = []): string
     {
         $text = self::TRANSLATIONS[$key][$lang]

@@ -241,6 +241,10 @@ final class FlowLoader
                     $errors[] = "router '{$branch['id']}': unknown do '" . json_encode($branch['do'] ?? null) . "'";
                 }
                 $this->validateTools($branch, $errors);
+                $buttons = $branch['buttons'] ?? [];
+                if (!is_array($buttons) || !array_is_list($buttons) || array_filter($buttons, static fn($b) => !is_string($b) || $b === '') !== []) {
+                    $errors[] = "router '{$branch['id']}': buttons must be a list of translation keys";
+                }
             }
         }
 

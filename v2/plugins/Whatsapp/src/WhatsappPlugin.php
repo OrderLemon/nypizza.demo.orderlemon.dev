@@ -135,6 +135,7 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(FlowLoader::class),
             $c->get(StateBuilder::class),
             $c->get(ShopBackground::class),
+            $c->get(LanguageHelper::class),
             $c->get(Logger::class),
         ));
 

@@ -6,6 +6,7 @@ namespace Plugins\Whatsapp\TypeSafe;
 
 use Plugins\Whatsapp\AI\MarvinTool;
 use Plugins\Whatsapp\AI\ShopBackground;
+use Plugins\Whatsapp\Support\LanguageHelper;
 use Pmsrapi\V2\Exception\ApiException;
 use Pmsrapi\V2\Support\Logger;
 
@@ -43,6 +44,7 @@ final class DecisionService
         private readonly FlowLoader $flows,
         private readonly StateBuilder $states,
         private readonly ShopBackground $shopBackground,
+        private readonly LanguageHelper $labels,
         private readonly Logger $logger,
     ) {}
 
@@ -124,7 +126,7 @@ final class DecisionService
                 $router[$branch['id']] = rtrim($branch['description'], '. ') . ': ' . implode('; ', $faq);
                 continue;
             }
-            $router[$branch['id']] = $branch['description'];
+            $router[$branch['id']] = $branch['description'] . $this->buttonTaps($branch);
         }
         $hasFaq = $faq !== [];
         $faq['none'] = 'The message is not one of these questions';
@@ -186,6 +188,22 @@ final class DecisionService
         ];
 
         return array_filter($questions, static fn(?array $q): bool => $q !== null);
+    }
+
+    /**
+     * The labels of the buttons that lead to this branch ("buttons" in the
+     * flow: translation keys), in every language. A tap arrives as its label.
+     *
+     * @param array<string, mixed> $branch
+     */
+    private function buttonTaps(array $branch): string
+    {
+        $labels = [];
+        foreach ((array) ($branch['buttons'] ?? []) as $key) {
+            $labels = [...$labels, ...$this->labels->labels((string) $key)];
+        }
+
+        return $labels === [] ? '' : '. Also when `latest_message` is exactly one of these button labels: ' . implode(', ', array_unique($labels));
     }
 
     private function read(TypeSafeResult $result, Flow $flow): Decision

@@ -33,7 +33,11 @@
         "change_logistics",
         "get_cart"
       ],
-      "description": "Is about menu items: wants to see, know about or order products. Asks what there is, for the menu or a category (sides, drinks, bowls), whether they have something, what an item is, contains or costs, items that fit a wish (with chicken, vegan, spicy, cheap), or the food in general (is the chicken halal, is it organic, gluten-free options); or wants to order or start ordering, even without naming anything yet (I want to order, ik wil bestellen, I'd like, I also want, give me, 2x, one more, add), says yes to items Marvin just offered, or answers Marvin's question about an item or the item being built (which size, base, protein, sauce, toppings or which one, including no thanks, that's it or finish it), or no longer wants the item being built, or wants to change an item already in the basket (add or drop an option, swap the base or size: add corn to the bowl, make it quinoa, no cucumber)"
+      "description": "Is about menu items: wants to see, know about or order products, or asks about today's promo, deals or offers. Asks what there is, for the menu or a category (sides, drinks, bowls), whether they have something, what an item is, contains or costs, items that fit a wish (with chicken, vegan, spicy, cheap), or the food in general (is the chicken halal, is it organic, gluten-free options); or wants to order or start ordering, even without naming anything yet (I want to order, ik wil bestellen, I'd like, I also want, give me, 2x, one more, add), says yes to items Marvin just offered, or answers Marvin's question about an item or the item being built (which size, base, protein, sauce, toppings or which one, including no thanks, that's it or finish it), or no longer wants the item being built, or wants to change an item already in the basket (add or drop an option, swap the base or size: add corn to the bowl, make it quinoa, no cucumber)",
+      "buttons": [
+        "something_else",
+        "todays_promo"
+      ]
     },
     {
       "id": "remove",
@@ -65,12 +69,18 @@
     {
       "id": "track_order",
       "do": "tool:track_order",
-      "description": "Asks about an order that is already placed and paid: where it is, when it arrives, its status"
+      "description": "Asks about an order that is already placed and paid: where it is, when it arrives, its status",
+      "buttons": [
+        "track_order"
+      ]
     },
     {
       "id": "reorder",
       "do": "tool:get_usual_for_user",
-      "description": "Wants the same as last time or their usual order"
+      "description": "Wants the same as last time or their usual order",
+      "buttons": [
+        "the_usual"
+      ]
     },
     {
       "id": "language_change",
