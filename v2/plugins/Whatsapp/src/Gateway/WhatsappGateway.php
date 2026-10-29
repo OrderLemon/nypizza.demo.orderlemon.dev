@@ -142,7 +142,7 @@ final class WhatsappGateway
         bool $disableUrlPreview = false,
         ?int $conversationId = null,
     ): array {
-        return $this->send('send_text', $recipient, $conversationId, [
+        return $this->send('send_typing', $recipient, $conversationId, [
             'text' => $text,
             'disableUrlPreview' => $disableUrlPreview,
         ]);

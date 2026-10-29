@@ -29,6 +29,9 @@ final class MenuService
     /** @var array<int,array<string,mixed>>|null product id => product */
     private ?array $index = null;
 
+    /** @var array<string, list<int>> category id or slug => product ids in it, subcategories included */
+    private array $categoryProducts = [];
+
     /** @var list<array<string,mixed>>|null raw campaigns from menu.json, unfiltered */
     private ?array $campaignsRaw = null;
 
@@ -210,6 +213,18 @@ final class MenuService
 
     // ----------------------------------------------------------------- pricing
 
+    /**
+     * The products in a category, by its id or slug, subcategories included.
+     *
+     * @return list<int>
+     */
+    public function productsInCategory(string $category): array
+    {
+        $this->index();
+
+        return array_values(array_unique($this->categoryProducts[$category] ?? []));
+    }
+
     public function basePrice(int $productId): float
     {
         return round((float) ($this->product($productId)['price'] ?? 0), 2);
@@ -271,7 +286,13 @@ final class MenuService
         }
 
         $index = [];
+        $this->categoryProducts = [];
         $this->walk(is_array($menu) ? $menu : [], $index);
+        foreach ($index as $id => $product) {
+            if (isset($product['category_id'])) {
+                $this->categoryProducts[(string) $product['category_id']][] = (int) $id;
+            }
+        }
 
         if ($index === []) {
             $this->logger->error('menu: indexed zero products', ['path' => $path]);
@@ -470,7 +491,7 @@ final class MenuService
      * @param array<mixed> $nodes
      * @param array<int,array<string,mixed>> $index
      */
-    private function walk(array $nodes, array &$index): void
+    private function walk(array $nodes, array &$index, array $categories = []): void
     {
         foreach ($nodes as $node) {
             if (!is_array($node)) {
@@ -483,14 +504,23 @@ final class MenuService
                 continue;
             }
 
+            // This category and its parents, by id and slug, for productsInCategory().
+            $chain = [...$categories, ...array_filter([
+                isset($node['id']) ? (string) $node['id'] : null,
+                is_string($node['slug'] ?? null) ? $node['slug'] : null,
+            ], static fn(?string $key): bool => $key !== null && $key !== '')];
+
             foreach ((array) ($node['products'] ?? []) as $product) {
                 if (is_array($product) && isset($product['id'])) {
                     $index[(int) $product['id']] = $product;
+                    foreach ($chain as $key) {
+                        $this->categoryProducts[$key][] = (int) $product['id'];
+                    }
                 }
             }
 
-            $this->walk((array) ($node['sub-category'] ?? []), $index);
-            $this->walk((array) ($node['subcategory'] ?? []), $index);
+            $this->walk((array) ($node['sub-category'] ?? []), $index, $chain);
+            $this->walk((array) ($node['subcategory'] ?? []), $index, $chain);
         }
     }
 

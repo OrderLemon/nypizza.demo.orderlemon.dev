@@ -16,8 +16,10 @@ use Pmsrapi\V2\Services\OrderQueryService;
 use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Services\PrintService;
 use Pmsrapi\V2\Services\ShopService;
+use Pmsrapi\V2\Services\ShopLinkService;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Support\Logger;
+use Pmsrapi\V2\Orders\OrderBasket;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
 use Plugins\Whatsapp\Support\ChannelInvitationLinker;
 use Plugins\Whatsapp\AI\ItemDraft;
@@ -44,6 +46,7 @@ final class CartController
         private readonly ClientService $clientService,
         private readonly ChannelInvitationLinker $channelInvitationLinker,
         private readonly ItemDraft $drafts,
+        private readonly ShopLinkService $shopLink
     ){}
 
     public function update(Request $request): Response
@@ -130,9 +133,12 @@ final class CartController
         }
 
         // currently using order time for pickup time
-        $this->sendTicketToClient($body["phonenumber"], $order["ordered_time"], $ticketUrl);
+        
+ 
+        
+        $this->sendTicketToClient($body["phonenumber"], $order, $ticketUrl);
 
-        $this->sendThankYouMessage($body["phonenumber"]);
+        $this->sendThankYouMessage($body["phonenumber"], $order);
 
         $this->sendChannelInvitation($body["phonenumber"]);
 
@@ -250,13 +256,29 @@ final class CartController
         }
     }
 
-    private function sendTicketToClient(string $phone, string $pickupDate,  string $ticketUrl) : bool
+    private function sendTicketToClient(string $phone, array $order,  string $ticketUrl) : bool
     {
         try
         {
-            $shopAddress = $this->config->secret("company.shop.address");
+            $language = $this->clientService->getClientLanguage($phone);
 
-            $caption = "Powered by OrderLemon\nTo pick up $shopAddress .\n\n At $pickupDate";
+            if((int) ($order["logistics_type"] ?? 1) === 1){
+                // pickup orders carry the shopper's address too, but they collect at the shop
+                $logisticsText = $this->language->translate
+                        ("to_pick_up", $language, ["address" => $this->shopService->address(), "time" => $order["pick_up_time"] ?? ""]);
+            }else{
+                $address = implode(", ", array_filter(
+                    [trim((string) ($order["street"] ?? "")), trim((string) ($order["city"] ?? ""))],
+                    static fn(string $part): bool => $part !== "",
+                ));
+
+                $logisticsText = $this->language->translate
+                        ("to_deliver", $language, ["address" => $address, "time" => $order["delivery_moment"] ?? ""]);
+            }
+            
+            $poweredBy = $this->language->translate("powered_by", $language,);
+            
+            $caption = $poweredBy . "\n" . $logisticsText;
 
             $this->whatsappGateway->sendImage($phone, $ticketUrl, $caption);
             
@@ -317,18 +339,39 @@ final class CartController
         }
     }
 
-    private function sendThankYouMessage(string $phone, ?string $conversationId = null) : bool
+    private function sendThankYouMessage(string $phone, array $order, ?int $conversationId = null) : bool
     {
         try
         {
             $language = $this->clientService->getClientLanguage($phone);
+            $thankYou = $this->language->translate('thank_you_for_ordering', $language, ['shop_name' => $this->shopService->name()]);
 
-            $this->whatsappGateway->sendButtons(
-                $phone,
-                $this->language->translate('thank_you_for_ordering', $language, ['shop_name' => $this->shopService->name()]),
-                $this->trackOrderButton($language),
-                $conversationId);
+            //if its delivery send thank you + track my order button
+            if((int) ($order["logistics_type"] ?? 1) === 2){
+                $this->whatsappGateway->sendButtons(
+                    $phone,
+                    $thankYou,
+                    $this->trackOrderButton($language),
+                    null,
+                    $conversationId);
+                //if its pickup send order again with CTA link with the same order
+            } else {
+                // an order with nothing reorderable (only discount lines) has no hash: plain shop link
+                $orderHash = OrderBasket::fingerprint($order);
+                $link = $orderHash === ''
+                    ? $this->shopLink->shopLink($phone, $language)
+                    : $this->shopLink->shopLinkWithUsualOrder($phone, $language, $orderHash);
 
+                $this->whatsappGateway->sendLink(
+                        $phone,
+                        $thankYou,
+                        $this->language->translate("order_again", $language),
+                        $link,
+                        null,
+                        null,
+                        $conversationId);
+            }
+            
             return true;
         }catch(\Exception $ex){
             $this->logger->error("whatsapp: thank you message", ["error" => $ex->getMessage()]);
@@ -384,6 +427,17 @@ final class CartController
     }
 
     private function trackOrderButton(string $language) : array
+    {
+        return [
+            [
+                "id" => "campaigntype-1",
+                "type" => "reply",
+                "title" => $this->language->translate('track_order', $language)
+            ],
+        ];
+    }
+
+    private function orderAgainButton(string $language) : array
     {
         return [
             [

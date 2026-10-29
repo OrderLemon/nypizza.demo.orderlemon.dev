@@ -24,6 +24,7 @@ final class CartSyncService
         private readonly ShopService $shopService,
         private readonly Logger $logger,
         private readonly RedisLock $lock,
+        private readonly MenuService $menu,
     ) {}
 
     /**
@@ -87,7 +88,7 @@ final class CartSyncService
             ));
 
             foreach ($items as $item) {
-                $this->insertLine($orderId, $item, null);
+                $this->insertLine($orderId, $item, null, null);
             }
 
             $this->addDeliveryFee($order, $items);
@@ -173,7 +174,7 @@ final class CartSyncService
      * there's no line to attach them to, its configs too) rather than
      * inserting a dead 0-quantity row.
      */
-    private function insertLine(int $orderId, array $item, ?int $parentId): void
+    private function insertLine(int $orderId, array $item, ?int $parentId, ?int $hostProductId): void
     {
         $item = $this->normalizeIds($item);
         $this->validateItem($item);
@@ -183,6 +184,8 @@ final class CartSyncService
         if ($quantity === 0) {
             return;
         }
+
+        $item['unit_price'] = $this->menuPrice($item, $hostProductId);
 
         $lineId = $this->repo->insertRow($this->orderItemsTable(), [
             'order_id'          => $orderId,
@@ -208,8 +211,44 @@ final class CartSyncService
                 throw new ValidationException(['configs' => 'Each topping must be an item object']);
             }
 
-            $this->insertLine($orderId, $config, $lineId);
+            $this->insertLine($orderId, $config, $lineId, (int) $item['product_id']);
         }
+    }
+
+    /**
+     * The price from the menu, not the one the web cart sent: the web shows a
+     * promotion by lowering an item's price, and keeping that would leave the
+     * campaign nothing to discount, so no "Discount - <campaign>" line. Prices
+     * come from the catalogue (product base price, option price delta); a line
+     * the menu does not know keeps the price it was sent with.
+     *
+     * @param array<string, mixed> $item normalised: product_id is the option id for a config
+     */
+    private function menuPrice(array $item, ?int $hostProductId): float
+    {
+        $sent = (float) $item['unit_price'];
+        $productId = (int) $item['product_id'];
+
+        $price = null;
+        if ($hostProductId === null && $this->menu->has($productId)) {
+            $price = (float) $this->menu->basePrice($productId);
+        } elseif ($hostProductId !== null && $this->menu->has($hostProductId)) {
+            $config = $this->menu->resolveOptions($hostProductId, [(string) $productId])['config'][0] ?? null;
+            $price = $config === null ? null : (float) $config['unit_price'];
+        }
+
+        if ($price === null) {
+            return $sent;
+        }
+        if (abs($price - $sent) > 0.004) {
+            $this->logger->info('cart sync: price taken from the menu', [
+                'product_id' => $productId,
+                'sent'       => $sent,
+                'menu'       => $price,
+            ]);
+        }
+
+        return $price;
     }
 
     /**

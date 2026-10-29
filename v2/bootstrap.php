@@ -61,6 +61,7 @@ use Pmsrapi\V2\Services\CartService;
 use Pmsrapi\V2\Services\CartSyncService;
 use Pmsrapi\V2\Services\PrintService;
 use Pmsrapi\V2\Services\ShopService;
+use Pmsrapi\V2\Services\ShopLinkService;
 use Pmsrapi\V2\Services\ChatTranscriptService;
 use Pmsrapi\V2\Services\TranscribeService;
 
@@ -77,6 +78,9 @@ $config = Config::load(V2_BASE . '/config.php');
 // Fail loud in dev/test, quiet in prod — but never silence errors (.claude/rules/error-never-suppress).
 error_reporting(E_ALL);
 ini_set('display_errors', $config->isProduction() ? '0' : '1');
+
+// Shop calendars are local wall-clock times; "now" has to be too, DST included.
+date_default_timezone_set('Europe/Brussels');
 
 $container = new Container();
 $container->instance(Config::class, $config);
@@ -218,6 +222,10 @@ $container->singleton(ConfigService::class, static fn(Container $c): ConfigServi
     $c->get(Config::class),
 ));
 
+$container->singleton(ShopLinkService::class, static fn(Container $c): ShopLinkService => new ShopLinkService(
+    $c->get(Config::class),
+));
+
 $container->singleton(JsonService::class, static fn(Container $c): JsonService => new JsonService(
     $c->get(Logger::class),
     $c->get(Config::class)
@@ -271,6 +279,7 @@ $container->singleton(CartSyncService::class, static fn(Container $c): CartSyncS
     $c->get(ShopService::class),
     $c->get(Logger::class),
     $c->get(RedisLock::class),
+    $c->get(MenuService::class),
 ));
 
 $container->singleton(PrintService::class, static fn(Container $c): PrintService => new PrintService(

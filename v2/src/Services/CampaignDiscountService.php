@@ -75,7 +75,11 @@ final class CampaignDiscountService
                     unset($pool[$index]);
                 }
 
-                $discount = round(array_sum(array_column($taken, 'price')) - (float) $campaign['price'], 2);
+                // A percentage off what the items cost, else down to the deal price.
+                $itemsPrice = array_sum(array_column($taken, 'price'));
+                $discount = is_numeric($campaign['discount_percentage'] ?? null)
+                    ? round($itemsPrice * min(100.0, (float) $campaign['discount_percentage']) / 100, 2)
+                    : round($itemsPrice - (float) $campaign['price'], 2);
 
                 if ($discount <= 0) {
                     continue;
@@ -100,9 +104,11 @@ final class CampaignDiscountService
     }
 
     /**
-     * One entry per unit of every top-level product line. Configs ride on
-     * their host (a config's price is not part of the campaign), and
-     * synthetic lines (delivery fee, discounts) are left out.
+     * One entry per unit of every top-level product line, priced at what the
+     * shopper pays for one: the line's own price plus its configs (a portion,
+     * size or topping), since many products carry their price in a required
+     * option (4 or 8 pieces, a base price of 0). Synthetic lines (delivery
+     * fee, discounts) are left out.
      *
      * @param list<array<string, mixed>> $lines
      * @return list<array{product_id: int, keys: list<string>, price: float, vat: int}>
@@ -110,6 +116,15 @@ final class CampaignDiscountService
     private function unitPool(array $lines): array
     {
         $pool = [];
+
+        // A config's quantity follows its host's, so its unit price is per host unit.
+        $configPrice = [];
+        foreach ($lines as $line) {
+            $hostId = (int) ($line['parent_id'] ?? 0);
+            if ($hostId !== 0) {
+                $configPrice[$hostId] = ($configPrice[$hostId] ?? 0.0) + (float) $line['unit_price'];
+            }
+        }
 
         foreach ($lines as $line) {
             if ((int) ($line['parent_id'] ?? 0) !== 0 || (int) ($line['product_id'] ?? 0) <= 0) {
@@ -119,7 +134,7 @@ final class CampaignDiscountService
             $unit = [
                 'product_id' => (int) $line['product_id'],
                 'keys'       => $this->keysOf((int) $line['product_id']),
-                'price'      => round((float) $line['unit_price'], 2),
+                'price'      => round((float) $line['unit_price'] + ($configPrice[(int) $line['id']] ?? 0.0), 2),
                 'vat'        => CartService::normalizeVatPercentage($line['vat_percentage'] ?? 0),
             ];
 
@@ -188,7 +203,7 @@ final class CampaignDiscountService
         $campaigns = [];
 
         foreach ($this->menu->campaigns() as $campaign) {
-            if (!isset($campaign['id']) || !is_numeric($campaign['price'] ?? null)) {
+            if (!isset($campaign['id']) || (!is_numeric($campaign['price'] ?? null) && !is_numeric($campaign['discount_percentage'] ?? null))) {
                 continue;
             }
 
@@ -211,6 +226,13 @@ final class CampaignDiscountService
 
         foreach ((array) ($campaign['combo_groups'] ?? []) as $group) {
             $ids = is_array($group) ? array_map('strval', (array) ($group['ids'] ?? [])) : [];
+            // A group may name categories (id or slug) instead of, or next to, products.
+            foreach (is_array($group) ? (array) ($group['categories'] ?? []) : [] as $category) {
+                foreach ($this->menu->productsInCategory((string) $category) as $productId) {
+                    $ids[] = (string) $productId;
+                }
+            }
+            $ids = array_values(array_unique($ids));
 
             if ($ids === []) {
                 return [];
