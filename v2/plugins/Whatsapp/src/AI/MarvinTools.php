@@ -45,6 +45,9 @@ final class MarvinTools
 
     private const string MOMENT_FORMAT = 'Y-m-d H:i';
 
+    /** Preparation time: "as soon as possible" is never earlier than now + this. */
+    private const int PREP_MINUTES = 15;
+
     private ?array $attachment = null;
 
     /** Set by detectLanguage(); read back via detectedLanguage(). ISO 639-1. */
@@ -1133,7 +1136,7 @@ final class MarvinTools
         $raw = trim((string) ($input['date'] ?? ''));
         // The model can't know today's date, so a bare "HH:MM" means today.
         $moment = match (true) {
-            strtolower($raw) === 'asap' => $now,
+            strtolower($raw) === 'asap' => $now->modify('+' . self::PREP_MINUTES . ' minutes'),
             preg_match('/^\d{2}:\d{2}$/', $raw) === 1 => $this->parseMoment($now->format('Y-m-d ') . $raw),
             default => $this->parseMoment($raw),
         };

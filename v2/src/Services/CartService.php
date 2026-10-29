@@ -774,10 +774,6 @@ final class CartService
 
         $checkoutData['logistics_type'] = $logistics;
 
-        if ($logistics !== self::DELIVERY_LOGISTIC_TYPE) {
-            $checkoutData = array_diff_key($checkoutData, array_flip(self::ADDRESS_FIELDS));
-        }
-
         if(isset($checkoutData["country"])){
             $checkoutData["country"] = strtoupper(substr($checkoutData["country"],0,2));
         }

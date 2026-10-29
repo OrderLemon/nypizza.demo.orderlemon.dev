@@ -27,3 +27,4 @@ test-env/seed.sql
 test-env/entrypoint.sh
 v2/plugins/Whatsapp/bin/reset_shopper.php
 test-env/flows/99.flow.json.draft
+v2/plugins/Whatsapp/bin/campaign_check.php

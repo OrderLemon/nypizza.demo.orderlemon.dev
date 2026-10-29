@@ -6,6 +6,7 @@ namespace Plugins\Whatsapp\Controllers;
 
 use Exception;
 use Pmsrapi\V2\Services\ShopService;
+use Pmsrapi\V2\Services\ShopLinkService;
 use Plugins\Whatsapp\AI\Marvin;
 use Plugins\Whatsapp\AI\MarvinTool;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
@@ -78,6 +79,7 @@ final class WhatsappController
         private readonly DecisionService $decisions,
         private readonly DecisionHandler $typesafeHandler,
         private readonly LanguageDetector $languageDetector,
+        private readonly ShopLinkService $shopLink,
     ) {}
 
     /**
@@ -110,6 +112,9 @@ final class WhatsappController
             $this->logger->error("whatsatpp: shop errors", ["shop not found" => "No shop found for this phone number {$this->messagePayload["shop_phone_number"]}"]);
             throw new ValidationException(["inexisting shop" => "Found no shop associated with this number!"]);
         }
+        
+        $this->gateway->sendText($this->messagePayload["phone_number"], "");
+
         // $this->logger->info("whatsatpp: shop details", $this->shop);
 
         // The gateway's "incoming" envelope is also used to relay events with
@@ -118,6 +123,7 @@ final class WhatsappController
         // reason to touch the client record, so bail out before
         // handleCustomer() ever runs — that's what creates/updates the
         // clients_{shop_id} row.
+        
         if (!$this->hasUsableContent()) {
             $this->logger->info('whatsapp: ignoring inbound payload with no usable content', [
                 'sender' => $this->messagePayload["phone_number"],
@@ -254,7 +260,7 @@ final class WhatsappController
 
         try {
 
-            $shopLink = $checkout ? $this->shopLinkWithCheckout() : $this->shopLink();
+            $shopLink = $checkout ? $this->shopLink->shopLinkWithCheckout($this->messagePayload["phone_number"], $this->conversationLanguage) : $this->shopLink->shopLink($this->messagePayload["phone_number"], $this->conversationLanguage);
 
             $buttonText = $checkout ? $this->language->translate("order", $this->conversationLanguage)
                 : null;
@@ -298,7 +304,7 @@ final class WhatsappController
         }
 
         try{
-            $this->sendMenuLink($fullMessage, $this->shopLinkWithCheckout());
+            $this->sendMenuLink($fullMessage, $this->shopLink->shopLinkWithCheckout($this->messagePayload["phone_number"], $this->conversationLanguage));
 
             // Log Marvin's own turn, or he will not see this reply on the next
             // message and the thread loses all context.
@@ -324,7 +330,7 @@ final class WhatsappController
         $this->conversationLanguage = $reply["language"];
 
         try{
-            $this->sendMenuLink($reply["message"], $this->shopLinkWithCheckout());
+            $this->sendMenuLink($reply["message"], $this->shopLink->shopLinkWithCheckout($this->messagePayload["phone_number"], $this->conversationLanguage));
 
             // Log Marvin's own turn, or he will not see this reply on the next
             // message and the thread loses all context.
@@ -355,7 +361,7 @@ final class WhatsappController
 
         try {
 
-            $this->sendMenuLink($reply["message"], $this->shopLinkWithProducts($reply["product_ids"]));
+            $this->sendMenuLink($reply["message"], $this->shopLink->shopLinkWithProducts($this->messagePayload["phone_number"], $this->conversationLanguage, $reply["product_ids"]));
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -387,7 +393,7 @@ final class WhatsappController
 
         try {
 
-            $this->sendMenuLink($reply["message"], $this->shopLinkWithUsualOrder($reply["order"]["hash"]));
+            $this->sendMenuLink($reply["message"], $this->shopLink->shopLinkWithUsualOrder($this->messagePayload["phone_number"], $this->conversationLanguage, $reply["order"]["hash"]));
             
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -418,7 +424,7 @@ final class WhatsappController
 
         try {
 
-            $this->sendMenuLink($reply["message"], $this->shopLinkWithUsualOrder($reply["order"]["hash"]));
+            $this->sendMenuLink($reply["message"], $this->shopLink->shopLinkWithUsualOrder($this->messagePayload["phone_number"], $this->conversationLanguage, $reply["order"]["hash"]));
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -504,7 +510,7 @@ final class WhatsappController
     private function sendMarvinText(string $marvinReplyMessage, ?string $sourceTool = null) : array
     {
         try {
-            $this->sendMenuLink($marvinReplyMessage, $this->shopLink());
+            $this->sendMenuLink($marvinReplyMessage, $this->shopLink->shopLink($this->messagePayload["phone_number"], $this->conversationLanguage));
 
             // Log Marvin's own turn, or he will not see his previous answers on
             // the next message and the thread loses all context.
@@ -548,7 +554,7 @@ final class WhatsappController
                 // $channelInvitationMessage = $this->language->translate("channel_invitation", $this->conversationLanguage, ["shop_name" => $shopName]);
             }
 
-            $this->sendMenuLink($greeting, $this->shopLink(), $this->headerImage());
+            $this->sendMenuLink($greeting, $this->shopLink->shopLink($this->messagePayload["phone_number"], $this->conversationLanguage), $this->headerImage());
 
             // Record the greeting so Marvin knows the shopper was already
             // welcomed and does not greet them a second time.
@@ -622,30 +628,6 @@ final class WhatsappController
         $this->logger->info("CTA Header:", ["path" => $imagePath]);
         
         return $imagePath;
-    }
-
-    private function shopLinkWithProducts(array $ids) : string
-    {
-        return $this->shopLink() . "&products=" . join(",", $ids);
-    }
-
-    private function shopLinkWithUsualOrder(string $orderHash) : string
-    {
-        return $this->shopLink() . "&order=" . urlencode($orderHash);
-    }
-
-    private function shopLinkWithCheckout() : string
-    {
-        return $this->shopLink() . "&checkout=true";
-    }
-
-    private function shopLink() : string
-    {
-        $shopLink = $this->config->secret("cta.shop_link");
-        return rtrim($shopLink, "/") . "/?phonenumber=" 
-            . urlencode($this->messagePayload["phone_number"]) 
-            . "&shop_id=" . shop_id
-            . "&language=" . $this->conversationLanguage;
     }
 
     /**

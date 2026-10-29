@@ -113,6 +113,14 @@ final class LanguageHelper
             'de' => 'BESTELLEN',
             'fr' => 'COMMANDER',
         ],
+        'order_again' => [
+            'en' => 'ORDER AGAIN',
+            'nl' => 'OPNIEUW BESTELLEN',
+            'tr' => 'TEKRAR SİPARİŞ VER',
+            'es' => 'PEDIR DE NUEVO',
+            'de' => 'NOCHMAL BESTELLEN',
+            'fr' => 'RECOMMANDER',
+        ],
         'thank_you_for_ordering' => [
             'en' => 'Thank you for ordering at {{SHOP_NAME}}!',
             'nl' => 'Bedankt voor je bestelling bij {{SHOP_NAME}}!',
@@ -176,6 +184,20 @@ final class LanguageHelper
             'es' => 'Por favor, haz tu selección a continuación',
             'de' => 'Bitte triff deine Auswahl unten',
             'fr' => 'Veuillez faire votre choix ci-dessous',
+        ],
+        'powered_by' => [
+            'en' => 'Powered by OrderLemon',
+            'nl' => 'Mogelijk gemaakt door OrderLemon',
+        ],
+
+        'to_pick_up' => [
+            'en' => 'To pick up {{ADDRESS}} at {{TIME}}',
+            'nl' => 'Afhalen bij {{ADDRESS}} om {{TIME}}',
+        ],
+
+        'to_deliver' => [
+            'en' => 'To be delivered at {{ADDRESS}} at {{TIME}}',
+            'nl' => 'Bezorgen op {{ADDRESS}} om {{TIME}}',
         ],
     ];
 

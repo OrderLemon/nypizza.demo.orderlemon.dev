@@ -6,6 +6,7 @@ namespace Plugins\Whatsapp;
 
 use Pmsrapi\V2\Cluster\ServiceClient;
 use Pmsrapi\V2\Services\ShopService;
+use Pmsrapi\V2\Services\ShopLinkService;
 use Plugins\Whatsapp\Controllers\WhatsappController;
 use Plugins\Whatsapp\Gateway\WhatsappGateway;
 use Pmsrapi\V2\Database\Repository;
@@ -209,6 +210,7 @@ final class WhatsappPlugin extends AbstractPlugin
                 $c->get(DecisionService::class),
                 $c->get(DecisionHandler::class),
                 $c->get(LanguageDetector::class),
+                $c->get(ShopLinkService::class),
             ),
         );
     }
