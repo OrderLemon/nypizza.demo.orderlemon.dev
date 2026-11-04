@@ -32,6 +32,7 @@ final class LanguageHelper
             'es' => "¡Hola, bienvenido a {{SHOP_NAME}}! Soy Marvin, tu asistente. Pregúntame lo que quieras sobre el menú, o te ayudo a hacer tu pedido, por texto o audio. ¿Prefieres ver el catálogo tú mismo? Solo pulsa ABRIR.",
             'de' => "Hallo, willkommen bei {{SHOP_NAME}}! Ich bin Marvin, dein Assistent. Frag mich alles zum Menü, oder ich helfe dir bei der Bestellung, per Text oder Sprachnachricht. Möchtest du lieber selbst stöbern? Tippe einfach auf ÖFFNEN.",
             'fr' => "Bonjour, bienvenue chez {{SHOP_NAME}} ! Je suis Marvin, votre assistant. Posez-moi vos questions sur le menu, ou laissez-moi vous aider à passer commande, par texte ou message vocal. Vous préférez parcourir vous-même ? Appuyez sur OUVRIR.",
+            'it' => "Ciao, benvenuto da {{SHOP_NAME}}! Sono Marvin, il tuo assistente. Chiedimi qualsiasi cosa sul menu, oppure lascia che ti aiuti a ordinare, per testo o messaggio vocale. Preferisci sfogliare da solo? Tocca APRI.",
         ],
         'welcome_wine' => [
             'en' => "Hi, welcome to {{SHOP_NAME}}!\nOrdering is very easy: you just tell me what you're looking for and your specific preferences, and I'll give you a few suggestions and add it to your basket if needed. Tell me when you're done, and then I'll give you a link to check out.",
@@ -40,6 +41,7 @@ final class LanguageHelper
             'es' => "¡Hola, bienvenido a {{SHOP_NAME}}!\nHacer un pedido es muy fácil: solo dime lo que buscas y tus preferencias específicas, y te daré algunas sugerencias y las añadiré a tu cesta si es necesario. Avísame cuando hayas terminado y te enviaré un enlace para finalizar la compra.",
             'de' => "Hallo, willkommen bei {{SHOP_NAME}}!\nBestellen ist ganz einfach: Sag mir einfach, wonach du suchst und welche besonderen Vorlieben du hast, und ich gebe dir ein paar Vorschläge und lege sie bei Bedarf in deinen Warenkorb. Sag mir Bescheid, wenn du fertig bist, dann schicke ich dir einen Link zum Bezahlen.",
             'fr' => "Bonjour, bienvenue chez {{SHOP_NAME}} !\nCommander est très simple : dites-moi simplement ce que vous cherchez et vos préférences spécifiques, et je vous ferai quelques suggestions et les ajouterai à votre panier si besoin. Dites-moi quand vous avez terminé, et je vous enverrai un lien pour finaliser votre commande.",
+            'it' => "Ciao, benvenuto da {{SHOP_NAME}}!\nOrdinare è facilissimo: dimmi semplicemente cosa cerchi e le tue preferenze, e ti darò qualche suggerimento aggiungendolo al carrello se vuoi. Dimmi quando hai finito e ti invierò un link per completare l'acquisto.",
         ],
         'the_usual' => [
             'en' => 'The usual',
@@ -48,6 +50,7 @@ final class LanguageHelper
             'es' => 'Lo de siempre',
             'de' => 'Das Übliche',
             'fr' => "Comme d'habitude",
+            'it' => "Il solito",
         ],
         'something_else' => [
             'en' => 'Something else',
@@ -56,6 +59,7 @@ final class LanguageHelper
             'es' => 'Otra cosa',
             'de' => 'Etwas anderes',
             'fr' => 'Autre chose',
+            'it' => "Qualcos'altro",
         ],
         'todays_promo' => [
             'en' => "Today's promo",
@@ -64,6 +68,7 @@ final class LanguageHelper
             'es' => 'Promo de hoy',
             'de' => 'Heutiges Angebot',
             'fr' => 'Promo du jour',
+            'it' => "Promo di oggi",
         ],
         'voice_message_fallback' => [
             'en' => "Sorry, currently I cannot process your voice message. Could you type it instead?",
@@ -72,6 +77,7 @@ final class LanguageHelper
             'es' => 'Lo siento, en este momento no puedo procesar tu mensaje de voz. ¿Podrías escribirlo en su lugar?',
             'de' => 'Entschuldigung, ich kann deine Sprachnachricht derzeit nicht verarbeiten. Könntest du sie stattdessen tippen?',
             'fr' => "Désolé, je ne peux pas traiter votre message vocal pour le moment. Pourriez-vous plutôt l'écrire ?",
+            'it' => "Mi dispiace, al momento non riesco a elaborare il tuo messaggio vocale. Potresti scriverlo?",
         ],
         'marvin_fallback' => [
             'en' => "Sorry, I can't help you with this at the moment. You can reach our team here:\n{{SUPPORT}}",
@@ -80,6 +86,7 @@ final class LanguageHelper
             'es' => "Lo siento, en este momento no puedo ayudarte con esto. Puedes contactar con nuestro equipo aquí:\n{{SUPPORT}}",
             'de' => "Entschuldigung, dabei kann ich dir im Moment nicht helfen. Unser Team erreichst du hier:\n{{SUPPORT}}",
             'fr' => "Désolé, je ne peux pas t'aider avec ça pour le moment. Tu peux joindre notre équipe ici :\n{{SUPPORT}}",
+            'it' => "Mi dispiace, al momento non posso aiutarti con questo. Puoi contattare il nostro team qui:\n{{SUPPORT}}",
         ],
         'track_order' => [
             'en' => 'Track my order',
@@ -88,6 +95,7 @@ final class LanguageHelper
             'es' => 'Rastrear pedido',
             'de' => 'Bestellung verfolgen',
             'fr' => 'Suivre ma commande',
+            'it' => "Traccia ordine",
         ],
         'order_lost' => [
             'en' => "Your order got lost. Please contact our team:\n{{SUPPORT}}",
@@ -96,6 +104,7 @@ final class LanguageHelper
             'es' => "Tu pedido se ha perdido. Por favor, contacta con nuestro equipo:\n{{SUPPORT}}",
             'de' => "Deine Bestellung ist leider verloren gegangen. Bitte kontaktiere unser Team:\n{{SUPPORT}}",
             'fr' => "Votre commande a été perdue. Veuillez contacter notre équipe :\n{{SUPPORT}}",
+            'it' => "Il tuo ordine è andato perso. Contatta il nostro team:\n{{SUPPORT}}",
         ],
         'open' => [
             'en' => 'OPEN',
@@ -104,6 +113,7 @@ final class LanguageHelper
             'es' => 'ABRIR',
             'de' => 'ÖFFNEN',
             'fr' => 'OUVRIR',
+            'it' => "APRI",
         ],
         'order' => [
             'en' => 'ORDER',
@@ -112,6 +122,7 @@ final class LanguageHelper
             'es' => 'PEDIR',
             'de' => 'BESTELLEN',
             'fr' => 'COMMANDER',
+            'it' => "ORDINA",
         ],
         'order_again' => [
             'en' => 'ORDER AGAIN',
@@ -120,6 +131,7 @@ final class LanguageHelper
             'es' => 'PEDIR DE NUEVO',
             'de' => 'NOCHMAL BESTELLEN',
             'fr' => 'RECOMMANDER',
+            'it' => "ORDINA DI NUOVO",
         ],
         'thank_you_for_ordering' => [
             'en' => 'Thank you for ordering at {{SHOP_NAME}}!',
@@ -128,6 +140,7 @@ final class LanguageHelper
             'es' => '¡Gracias por tu pedido en {{SHOP_NAME}}!',
             'de' => 'Vielen Dank für deine Bestellung bei {{SHOP_NAME}}!',
             'fr' => 'Merci pour votre commande chez {{SHOP_NAME}} !',
+            'it' => "Grazie per aver ordinato da {{SHOP_NAME}}!",
         ],
         'open_menu_caption' => [
             'en' => 'To get your menu always click here',
@@ -136,6 +149,7 @@ final class LanguageHelper
             'es' => 'Haz clic aquí siempre para ver tu menú',
             'de' => 'Klicke hier immer für dein Menü',
             'fr' => 'Cliquez toujours ici pour votre menu',
+            'it' => "Clicca sempre qui per il tuo menu",
         ],
         'open_assortment_caption' => [
             'en' => 'Click the button below to look through our assortment',
@@ -144,6 +158,7 @@ final class LanguageHelper
             'es' => 'Haz clic en el botón de abajo para ver nuestro catálogo',
             'de' => 'Klicke auf die Schaltfläche unten, um unser Sortiment zu durchstöbern',
             'fr' => 'Cliquez sur le bouton ci-dessous pour parcourir notre assortiment',
+            'it' => "Clicca sul pulsante qui sotto per sfogliare il nostro assortimento",
         ],
         'click_to_order' => [
             'en' => 'Click the button below to order',
@@ -152,6 +167,7 @@ final class LanguageHelper
             'es' => 'Haz clic en el botón de abajo para pedir',
             'de' => 'Klicke auf die Schaltfläche unten, um zu bestellen',
             'fr' => 'Cliquez sur le bouton ci-dessous pour commander',
+            'it' => "Clicca sul pulsante qui sotto per ordinare",
         ],
         'channel_invitation' => [
             'en' => 'Do you want to stay up to date on all our offers, daily specials, and menu updates? Then sign up for our WhatsApp channel',
@@ -160,6 +176,7 @@ final class LanguageHelper
             'es' => '¿Quieres estar al día de todas nuestras ofertas, especiales del día y actualizaciones del menú? Entonces regístrate en nuestro canal de WhatsApp',
             'de' => 'Möchtest du über all unsere Angebote, Tagesspecials und Menü-Updates auf dem Laufenden bleiben? Dann melde dich für unseren WhatsApp-Kanal an',
             'fr' => 'Souhaitez-vous rester informé de toutes nos offres, plats du jour et mises à jour du menu ? Alors inscrivez-vous à notre chaîne WhatsApp',
+            'it' => "Vuoi restare aggiornato su tutte le nostre offerte, i piatti del giorno e le novità del menu? Allora iscriviti al nostro canale WhatsApp",
         ],
         'channel_invitation_wine' => [
             'en' => 'Would you like to stay up to date on all our offers, special wines, and tastings? Then sign up now for our WhatsApp channel.',
@@ -168,6 +185,7 @@ final class LanguageHelper
             'es' => '¿Quieres estar al día de todas nuestras ofertas, vinos especiales y catas? Entonces regístrate ahora en nuestro canal de WhatsApp.',
             'de' => 'Möchtest du über all unsere Angebote, besonderen Weine und Verkostungen auf dem Laufenden bleiben? Dann melde dich jetzt für unseren WhatsApp-Kanal an.',
             'fr' => 'Souhaitez-vous rester informé de toutes nos offres, vins spéciaux et dégustations ? Alors inscrivez-vous dès maintenant à notre chaîne WhatsApp.',
+            'it' => "Vuoi restare aggiornato su tutte le nostre offerte, i vini speciali e le degustazioni? Allora iscriviti subito al nostro canale WhatsApp.",
         ],
         'follow_channel' => [
             'en' => 'FOLLOW',
@@ -176,6 +194,7 @@ final class LanguageHelper
             'es' => 'SEGUIR',
             'de' => 'FOLGEN',
             'fr' => 'SUIVRE',
+            'it' => "SEGUI",
         ],
         'make_selection' => [
             'en' => 'Please make your selection below',
@@ -184,20 +203,24 @@ final class LanguageHelper
             'es' => 'Por favor, haz tu selección a continuación',
             'de' => 'Bitte triff deine Auswahl unten',
             'fr' => 'Veuillez faire votre choix ci-dessous',
+            'it' => "Fai la tua scelta qui sotto",
         ],
         'powered_by' => [
             'en' => 'Powered by OrderLemon',
             'nl' => 'Mogelijk gemaakt door OrderLemon',
+            'it' => "Realizzato da OrderLemon",
         ],
 
         'to_pick_up' => [
             'en' => 'To pick up {{ADDRESS}} at {{TIME}}',
             'nl' => 'Afhalen bij {{ADDRESS}} om {{TIME}}',
+            'it' => "Ritiro presso {{ADDRESS}} alle {{TIME}}",
         ],
 
         'to_deliver' => [
             'en' => 'To be delivered at {{ADDRESS}} at {{TIME}}',
             'nl' => 'Bezorgen op {{ADDRESS}} om {{TIME}}',
+            'it' => "Consegna a {{ADDRESS}} alle {{TIME}}",
         ],
     ];
 

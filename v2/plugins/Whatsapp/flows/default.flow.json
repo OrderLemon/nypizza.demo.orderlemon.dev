@@ -12,7 +12,8 @@
       "tr",
       "es",
       "de",
-      "fr"
+      "fr",
+      "it"
     ],
     "save_min_words": 3,
     "save_min_confidence": 0.8
@@ -137,7 +138,8 @@
       "tr": "Üzgünüm, bunu bu sohbette ayarlayamam. Ekibimize buradan ulaşabilirsin:",
       "es": "Lo siento, no puedo encargarme de eso en este chat. Puedes contactar con nuestro equipo aquí:",
       "de": "Entschuldigung, das kann ich in diesem Chat nicht regeln. Unser Team erreichst du hier:",
-      "fr": "Désolé, je ne peux pas m'en occuper dans ce chat. Tu peux joindre notre équipe ici :"
+      "fr": "Désolé, je ne peux pas m'en occuper dans ce chat. Tu peux joindre notre équipe ici :",
+      "it": "Mi dispiace, non posso occuparmene in questa chat. Puoi contattare il nostro team qui:"
     }
   }
 }
