@@ -9,6 +9,8 @@ use Plugins\Whatsapp\AI\AnthropicClient;
 use Plugins\Whatsapp\AI\MarvinTools;
 use Plugins\Whatsapp\AI\MarvinTool;
 use Plugins\Whatsapp\Support\LanguageHelper;
+use Plugins\Whatsapp\TypeSafe\FlowLoader;
+use Plugins\Whatsapp\TypeSafe\TypeSafeException;
 use Plugins\Whatsapp\Support\SupportContacts;
 use Pmsrapi\V2\Core\Config;
 use Pmsrapi\V2\Exception\ApiException;
@@ -133,6 +135,7 @@ final class Marvin
         private readonly Config $config,
         private readonly Logger $logger,
         private readonly LanguageHelper $language,
+        private readonly FlowLoader $flows,
     ) {}
 
     // ---------------------------------------------------------------- replying
@@ -543,6 +546,8 @@ final class Marvin
 
         $this->systemText = str_replace('{{MENU_JSON}}', $this->menuJson(), $this->systemText);
 
+        $this->systemText = $this->withLanguages($this->systemText);
+
 
         return $this->systemText;
     }
@@ -907,11 +912,40 @@ final class Marvin
             }
         }
 
+        $this->writerText = $this->withLanguages($this->writerText);
+
         return [[
             'type'          => 'text',
             'text'          => $this->writerText,
             'cache_control' => $this->cacheControl(),
         ]];
+    }
+
+    /**
+     * The shop flow's languages are the only list Marvin goes by: a fixed
+     * list in a prompt file would go stale whenever a language is added to
+     * the flow. Fills {{LANGUAGES}} and appends a closing rule that wins over
+     * any other list in the prompt. Without a shop (e.g. a CLI script) the
+     * prompt is left as it is.
+     */
+    private function withLanguages(string $prompt): string
+    {
+        if (str_contains($prompt, 'LANGUAGES (authoritative)')) {
+            return $prompt;
+        }
+
+        try {
+            $list = $this->flows->forShop()->languageList();
+        } catch (TypeSafeException $e) {
+            $this->logger->warning('marvin: no flow for the language list', ['error' => $e->getMessage()]);
+
+            return str_replace('{{LANGUAGES}}', '', $prompt);
+        }
+
+        return str_replace('{{LANGUAGES}}', $list, $prompt)
+            . "\n\nLANGUAGES (authoritative): you speak and write these languages: {$list}. "
+            . 'This list replaces any other language list above. When the shopper uses or asks for one of them, '
+            . 'reply in it and never say you cannot speak it.';
     }
 
     /**

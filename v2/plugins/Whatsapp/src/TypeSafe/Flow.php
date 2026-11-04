@@ -16,6 +16,13 @@ namespace Plugins\Whatsapp\TypeSafe;
  */
 final readonly class Flow
 {
+    /** Names for language codes, used wherever a model needs the language in words. */
+    public const array LANGUAGE_NAMES = [
+        'en' => 'English', 'nl' => 'Dutch', 'tr' => 'Turkish', 'es' => 'Spanish', 'de' => 'German',
+        'fr' => 'French', 'ar' => 'Arabic', 'it' => 'Italian', 'fy' => 'Frisian', 'pl' => 'Polish',
+        'pt' => 'Portuguese', 'ro' => 'Romanian', 'uk' => 'Ukrainian', 'ru' => 'Russian', 'zh' => 'Chinese',
+    ];
+
     /**
      * @param array<string, mixed> $data merged, validated flow
      */
@@ -50,6 +57,20 @@ final readonly class Flow
     public function languages(): array
     {
         return $this->data['languages']['supported'];
+    }
+
+    public static function languageName(string $code): string
+    {
+        return self::LANGUAGE_NAMES[$code] ?? $code;
+    }
+
+    /** The supported languages in words, e.g. "Dutch (nl), English (en), Italian (it)". */
+    public function languageList(): string
+    {
+        return implode(', ', array_map(
+            static fn(string $code): string => self::languageName($code) . " ({$code})",
+            $this->languages(),
+        ));
     }
 
     public function saveLanguageMinWords(): int

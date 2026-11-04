@@ -33,11 +33,6 @@ final class DecisionService
         . 'link for this basket, `item_in_progress` (when present) a product Marvin is building with the shopper '
         . 'and the choices it is waiting for: short answers like a choice, no thanks or that\'s it are about it.';
 
-    private const array LANGUAGE_NAMES = [
-        'en' => 'English', 'nl' => 'Dutch', 'tr' => 'Turkish', 'es' => 'Spanish', 'de' => 'German',
-        'fr' => 'French', 'ar' => 'Arabic', 'it' => 'Italian', 'fy' => 'Frisian', 'pl' => 'Polish',
-        'pt' => 'Portuguese', 'ro' => 'Romanian', 'uk' => 'Ukrainian', 'ru' => 'Russian', 'zh' => 'Chinese',
-    ];
 
     public function __construct(
         private readonly TypeSafeClient $client,
@@ -133,7 +128,7 @@ final class DecisionService
 
         $languages = [];
         foreach ($flow->languages() as $code) {
-            $languages[$code] = self::LANGUAGE_NAMES[$code] ?? $code;
+            $languages[$code] = Flow::languageName($code);
         }
 
         $questions = [

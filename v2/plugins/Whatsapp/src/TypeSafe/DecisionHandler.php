@@ -269,19 +269,26 @@ final class DecisionHandler
         $requested = $decision->requestedLanguage;
 
         // Not clear which language, or one the shop does not list: say which ones he speaks.
-        $languages = $this->flows->forShop()->languages();
+        $flow = $this->flows->forShop();
+        $languages = $flow->languages();
         if ($requested === null || !in_array($requested, $languages, true)
             || !$decision->isConfident($decision->requestedLanguageConfidence)) {
             $this->logger->info('typesafe: language not clear', ['requested' => $requested]);
 
             return $reply([], $this->note($decision, instructions: 'They asked about the language of this chat, but it is not clear '
-                . 'which supported language they want. You can write in these languages, by ISO code: ' . implode(', ', $languages)
+                . 'which supported language they want. You can write in these languages: ' . $flow->languageList()
                 . '. Name them in plain words and ask which one they would like, in one short message.'));
         }
 
         $this->logger->info('typesafe: switching language', ['language' => $requested]);
 
-        return $reply([[MarvinTool::DetectLanguage->value, ['language' => $requested]]], $this->note($decision, ranTool: true, instructions: $decision->instructions));
+        $name = Flow::languageName($requested);
+
+        return $reply([[MarvinTool::DetectLanguage->value, ['language' => $requested]]], $this->note($decision, ranTool: true, instructions: $this->join(
+            $decision->instructions,
+            "The chat is now switched to {$name}, which you speak. Write this reply and every next one in {$name}: "
+            . 'confirm the switch in one short line and ask how you can help. Never say you cannot speak it.',
+        )));
     }
 
     /** @param callable(list<array{0: string, 1: array<string,mixed>}>, string): array<string,mixed> $reply */

@@ -46,11 +46,9 @@ final class LanguageDetector
             return ['language' => $flow->defaultLanguage(), 'confidence' => 0.0, 'save' => false];
         }
 
-        $names = ['en' => 'English', 'nl' => 'Dutch', 'tr' => 'Turkish', 'es' => 'Spanish', 'de' => 'German', 'fr' => 'French',
-                  'ar' => 'Arabic', 'it' => 'Italian', 'fy' => 'Frisian', 'pl' => 'Polish', 'pt' => 'Portuguese'];
         $criteria = [];
         foreach ($flow->languages() as $code) {
-            $criteria[$code] = $names[$code] ?? $code;
+            $criteria[$code] = Flow::languageName($code);
         }
         $criteria['other'] = 'Another language, or too short or too generic to tell (ok, emoji, a product name)';
 

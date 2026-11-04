@@ -163,6 +163,7 @@ final class WhatsappPlugin extends AbstractPlugin
             $c->get(Config::class),
             $c->get(Logger::class),
             $c->get(LanguageHelper::class),
+            $c->get(FlowLoader::class),
         ));
 
         $registrar->singleton(LanguageDetector::class, static fn(Container $c): LanguageDetector => new LanguageDetector(
